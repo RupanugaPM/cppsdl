@@ -3,9 +3,10 @@
 #include <vector>
 #include <array>
 #include <cmath>
+#include <memory>
+//#include <bits/stdc++.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
-#include <memory>
 #include "particlesystem.cpp"
 #include "renderer2d.cpp"
 
