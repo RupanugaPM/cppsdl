@@ -136,6 +136,7 @@
     <ClCompile Include="Fireball.cpp" />
     <ClCompile Include="Particles.cpp" />
     <ClCompile Include="particlesystem.cpp" />
+    <ClCompile Include="portpygame.cpp" />
     <ClCompile Include="renderer2d.cpp" />
     <ClCompile Include="TestFirework.cpp" />
   </ItemGroup>

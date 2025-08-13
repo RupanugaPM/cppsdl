@@ -90,69 +90,69 @@ private:
 // --- Firework Class ---
 // Manages the booster and the subsequent particle explosion
 class Firework {
-public:
-    Firework() {
-        // Create a firework with a random color starting at the bottom of the screen
-        m_r = random_int(50, 255);
-        m_g = random_int(50, 255);
-        m_b = random_int(50, 255);
-        m_booster = std::make_unique<Particle>(random_float(0, SCREEN_WIDTH), SCREEN_HEIGHT, true, m_r, m_g, m_b);
-    }
+    public:
+        Firework() {
+            // Create a firework with a random color starting at the bottom of the screen
+            m_r = random_int(50, 255);
+            m_g = random_int(50, 255);
+            m_b = random_int(50, 255);
+            m_booster = std::make_unique<Particle>(random_float(0, SCREEN_WIDTH), SCREEN_HEIGHT, true, m_r, m_g, m_b);
+        }
 
-    void update() {
-        if (!m_exploded) {
-            m_booster->applyForce(GRAVITY);
-            m_booster->update();
-            // Explode when the booster reaches its apex (starts falling down)
-            if (m_booster->getVelY() >= 0) {
-                explode();
+        void update() {
+            if (!m_exploded) {
+                m_booster->applyForce(GRAVITY);
+                m_booster->update();
+                // Explode when the booster reaches its apex (starts falling down)
+                if (m_booster->getVelY() >= 0) {
+                    explode();
+                }
+            }
+            else {
+                for (auto& p : m_particles) {
+                    p.applyForce(GRAVITY);
+                    p.update();
+                }
+                // Remove particles that have faded out
+                m_particles.erase(
+                    std::remove_if(m_particles.begin(), m_particles.end(), [](const Particle& p) {
+                        return p.isDone();
+                        }),
+                    m_particles.end()
+                );
             }
         }
-        else {
-            for (auto& p : m_particles) {
-                p.applyForce(GRAVITY);
-                p.update();
-            }
-            // Remove particles that have faded out
-            m_particles.erase(
-                std::remove_if(m_particles.begin(), m_particles.end(), [](const Particle& p) {
-                    return p.isDone();
-                    }),
-                m_particles.end()
-            );
-        }
-    }
 
-    void draw(Draw& drawer) const {
-        if (!m_exploded) {
-            m_booster->draw(drawer);
-        }
-        else {
-            for (const auto& p : m_particles) {
-                p.draw(drawer);
+        void draw(Draw& drawer) const {
+            if (!m_exploded) {
+                m_booster->draw(drawer);
+            }
+            else {
+                for (const auto& p : m_particles) {
+                    p.draw(drawer);
+                }
             }
         }
-    }
 
-    bool isDone() const {
-        return m_exploded && m_particles.empty();
-    }
-
-private:
-    void explode() {
-        m_exploded = true;
-        SDL_FPoint boomPos = m_booster->getPos();
-        int num_particles = random_int(50, 150);
-        m_particles.reserve(num_particles);
-        for (int i = 0; i < num_particles; ++i) {
-            m_particles.emplace_back(boomPos.x, boomPos.y, false, m_r, m_g, m_b);
+        bool isDone() const {
+            return m_exploded && m_particles.empty();
         }
-    }
 
-    std::unique_ptr<Particle> m_booster;
-    std::vector<Particle> m_particles;
-    bool m_exploded = false;
-    Uint8 m_r, m_g, m_b;
+    private:    
+        void explode() {
+            m_exploded = true;
+            SDL_FPoint boomPos = m_booster->getPos();
+            int num_particles = random_int(50, 150);
+            m_particles.reserve(num_particles);
+            for (int i = 0; i < num_particles; ++i) {
+                m_particles.emplace_back(boomPos.x, boomPos.y, false, m_r, m_g, m_b);
+            }
+        }
+
+        std::unique_ptr<Particle> m_booster;
+        std::vector<Particle> m_particles;
+        bool m_exploded = false;
+        Uint8 m_r, m_g, m_b;
 };
 
 
