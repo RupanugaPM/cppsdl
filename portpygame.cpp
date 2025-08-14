@@ -1403,7 +1403,7 @@ public:
                 lvl.platforms.push_back({ {500, 500, 200, 20}, true });
                 lvl.platforms.push_back({ {350, 450, 150, 20}, false });
 
-                lvl.player_start = { 250, 660 };
+                lvl.player_start = { 250, 360 };
 
                 lvl.doors.push_back(Door(950, 630, 1));
                 lvl.doors.push_back(Door(100, 230, -1, "Exit"));
@@ -1554,7 +1554,7 @@ public:
 
             if (state == GameState::MENU) {
                 if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-                    int x, y;
+                    float x, y;
                     SDL_GetMouseState(&x, &y);
                     std::string action = menu.handle_click(x, y);
 
@@ -1575,7 +1575,7 @@ public:
         float dt = (current_time - last_time) / 1000.0f;
         last_time = current_time;
 
-        int mouse_x, mouse_y;
+        float mouse_x, mouse_y;
         SDL_GetMouseState(&mouse_x, &mouse_y);
 
         if (state == GameState::MENU) {
@@ -1622,7 +1622,7 @@ public:
         }
     }
 
-    void draw() {
+    void drawer() {
         draw.color(0, 0, 0);
         draw.clear();
 
@@ -1650,7 +1650,7 @@ public:
             // Draw UI
             if (player.can_fireball) {
                 // Crosshair
-                int mouse_x, mouse_y;
+                float mouse_x, mouse_y;
                 SDL_GetMouseState(&mouse_x, &mouse_y);
                 draw.color(WHITE.r, WHITE.g, WHITE.b, 100);
                 draw.circle(mouse_x, mouse_y, 8);
@@ -1708,7 +1708,7 @@ public:
         while (running) {
             handle_events();
             update();
-            draw();
+            drawer();
 
             // Frame limiting
             SDL_Delay(16);  // ~60 FPS
