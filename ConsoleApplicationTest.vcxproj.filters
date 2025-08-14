@@ -39,6 +39,9 @@
     <ClCompile Include="portpygame.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="portpygamev2.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Constants.h">
