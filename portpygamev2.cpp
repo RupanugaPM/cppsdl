@@ -1,5 +1,5 @@
 
-/*
+
 // main.cpp - COMPLETE SDL3 Limbo-style game implementation
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -706,7 +706,9 @@ public:
     }
 
     void set_abilities(const std::unordered_map<std::string, bool>& abs) {
-        abilities = abs;
+        for(auto &e:abs){
+            abilities[e.first] = e.second;
+        }
         jump_available = abilities["jump"];
         double_jump_available = abilities["double_jump"];
         can_fireball = abilities["fireball"];
@@ -752,9 +754,9 @@ public:
         }
 
         // Initialize abilities defaults
-        player_abilities["jump"] = false;
+        /*player_abilities["jump"] = false;
         player_abilities["double_jump"] = false;
-        player_abilities["fireball"] = false;
+        player_abilities["fireball"] = false;*/
 
         load_level();
     }
@@ -1413,6 +1415,7 @@ void Player::update(const std::vector<SDL_FRect>& platforms,
     const bool* keys_state = SDL_GetKeyboardState(nullptr);
     vel_x = 0;
 
+    SDL_Log("xxAfter collision: Player at (%.1f, %.1f), rect size (%.1f, %.1f)", rect.x, rect.y, rect.w, rect.h);
     // Movement
     if (keys_state[SDL_SCANCODE_LEFT] || keys_state[SDL_SCANCODE_A]) {
         vel_x = -PLAYER_SPEED;
@@ -1486,6 +1489,8 @@ void Player::update(const std::vector<SDL_FRect>& platforms,
         dropping = false;
     }
 
+    SDL_Log("2After collision: Player at (%.1f, %.1f), rect size (%.1f, %.1f), speed (%.1f, %.1f)", rect.x, rect.y, rect.w, rect.h, vel_x, vel_y);
+
     // Jumping
     bool jump_key = keys_state[SDL_SCANCODE_SPACE] ||
         keys_state[SDL_SCANCODE_UP] ||
@@ -1544,8 +1549,11 @@ void Player::update(const std::vector<SDL_FRect>& platforms,
 
     // Move horizontally
     rect.x += vel_x;
+    SDL_Log("3After collision: Player at (%.1f, %.1f), rect size (%.1f, %.1f), speed (%.1f, %.1f)", rect.x, rect.y, rect.w, rect.h, vel_x, vel_y);
     rect.x = std::max(0.0f, std::min(rect.x, SCREEN_WIDTH - rect.w));
+    SDL_Log("4After collision: Player at (%.1f, %.1f), rect size (%.1f, %.1f), speed (%.1f, %.1f)", rect.x, rect.y, rect.w, rect.h, vel_x, vel_y);
     check_collisions(platforms, solid_flags, 'h');
+    SDL_Log("5After collision: Player at (%.1f, %.1f), rect size (%.1f, %.1f), spewed (%.1f, %.1f)", rect.x, rect.y, rect.w, rect.h, vel_x, vel_y);
 
     // Move vertically
     rect.y += vel_y;
@@ -1599,16 +1607,17 @@ void Player::check_collisions(const std::vector<SDL_FRect>& platforms,
     for (size_t i = 0; i < platforms.size(); ++i) {
         const SDL_FRect& platform = platforms[i];
         bool is_solid = solid_flags[i];
-
+        SDL_Log("platfor After collision: platform at (%.1f, %.1f)", platform.x, platform.y);
         if (SDL_HasRectIntersectionFloat(&rect, &platform)) {
             if (direction == 'h') {
                 if (is_solid) {
-                    if (vel_x > 0) {
+                    SDL_Log("6After collision: Player at (%.1f, %.1f), rect size (%.1f, %.1f), speed (%.1f, %.1f)", rect.x, rect.y, rect.w, rect.h, vel_x, vel_y);
+                    /*if (vel_x > 0) {
                         rect.x = platform.x - rect.w;
                     }
-                    else {
+                    else if(vel_x < 0){
                         rect.x = platform.x + platform.w;
-                    }
+                    }*/
                 }
             }
             else { // vertical
@@ -1628,7 +1637,7 @@ void Player::check_collisions(const std::vector<SDL_FRect>& platforms,
                         vel_y = 0;
                         on_ground = true;
                     }
-                    else {
+                    else if(vel_y < 0){
                         rect.y = platform.y + platform.h;
                         vel_y = 0;
                     }
@@ -2149,6 +2158,404 @@ private:
 
 public:
     Game() : window(nullptr), renderer(nullptr),
-        state(GameState::MENU), level
+        state(GameState::MENU), level(nullptr),
+        player(100, 400), current_level(0),
+        from_level(0), running(true), level_surface(nullptr) {
+    }
 
-*/
+    ~Game() {
+        cleanup();
+    }
+
+    bool init() {
+        if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
+            SDL_Log("SDL_Init failed: %s", SDL_GetError());
+            return false;
+        }
+
+        window = SDL_CreateWindow(
+            "That time I got summoned by a mage to use my intellect and break free from the dungeon",
+            SCREEN_WIDTH, SCREEN_HEIGHT,
+            SDL_WINDOW_RESIZABLE
+        );
+
+        if (!window) {
+            SDL_Log("Window creation failed: %s", SDL_GetError());
+            return false;
+        }
+
+        renderer = SDL_CreateRenderer(window, nullptr);
+        if (!renderer) {
+            SDL_Log("Renderer creation failed: %s", SDL_GetError());
+            return false;
+        }
+
+        SDL_SetRenderVSync(renderer, 1);
+        draw.set_renderer(renderer);
+
+        if (!audio.init()) {
+            SDL_Log("Audio initialization failed");
+            // Continue without audio
+        }
+
+        // Load sounds
+        audio.loadSound("jump", "sounds/jump.wav");
+        audio.loadSound("walk", "sounds/walk.wav");
+        audio.loadSound("fireball", "sounds/fireball.wav");
+        audio.loadSound("menu_theme", "sounds/menu_theme.wav");
+        audio.loadSound("game_theme", "sounds/game_theme.wav");
+        audio.loadSound("ending_theme", "sounds/ending_theme.wav");
+
+        // Play menu music
+        audio.playMusic("menu_theme", 0.4f);
+
+        return true;
+    }
+
+    void cleanup() {
+        transition.cleanup(renderer);
+
+        if (level_surface) {
+            SDL_DestroySurface(level_surface);
+            level_surface = nullptr;
+        }
+
+        if (level) {
+            delete level;
+            level = nullptr;
+        }
+
+        audio.cleanup();
+
+        if (renderer) {
+            SDL_DestroyRenderer(renderer);
+        }
+        if (window) {
+            SDL_DestroyWindow(window);
+        }
+        SDL_Quit();
+    }
+
+    void start_level(int level_index) {
+        if (level) {
+            delete level;
+        }
+
+        level = new Level(level_index);
+        auto [x, y] = level->player_start;
+        player.set_position(x, y);
+        player.set_abilities(level->player_abilities);
+        player.current_level = level;
+        current_level = level_index;
+        state = GameState::PLAYING;
+    }
+
+    SDL_Texture* capture_screen() {
+        SDL_Texture* texture = SDL_CreateTexture(renderer,
+            SDL_PIXELFORMAT_RGBA8888,
+            SDL_TEXTUREACCESS_TARGET,
+            SCREEN_WIDTH, SCREEN_HEIGHT);
+
+        if (!texture) return nullptr;
+
+        // Set render target to texture
+        SDL_SetRenderTarget(renderer, texture);
+
+        // Draw current scene
+        draw_level();
+
+        // Reset render target
+        SDL_SetRenderTarget(renderer, nullptr);
+
+        return texture;
+    }
+
+    void start_transition(int target_level) {
+        // Stop walking sound if playing
+        audio.stopWalking();
+
+        transition.start_level = current_level;
+        transition.target_level = target_level;
+        from_level = current_level;
+
+        // Capture old level
+        transition.old_level_texture = capture_screen();
+
+        // Load new level
+        start_level(target_level);
+
+        // Capture new level
+        transition.new_level_texture = capture_screen();
+
+        transition.phase = TransitionState::SWIPE;
+        transition.progress = 0;
+        transition.offset_x = 0;
+        state = GameState::TRANSITIONING;
+    }
+
+    void handle_events() {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_EVENT_QUIT) {
+                running = false;
+            }
+            else if (event.type == SDL_EVENT_KEY_DOWN) {
+                if (event.key.key == SDLK_ESCAPE) {
+                    if (state == GameState::PLAYING) {
+                        // Return to menu
+                        state = GameState::MENU;
+                        audio.fadeOutMusic(500);
+                        audio.playMusic("menu_theme", 0.4f);
+                    }
+                }
+                else if (state == GameState::PLAYING) {
+                    if (event.key.key == SDLK_E) {
+                        // Interact with NPCs
+                        for (auto& npc : level->npcs) {
+                            if (npc.show_prompt) {
+                                npc.interact(from_level, current_level);
+                            }
+                        }
+                    }
+                }
+            }
+            else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+                if (state == GameState::MENU) {
+                    float x, y;
+                    SDL_GetMouseState(&x, &y);
+                    std::string action = menu.handle_click(x, y);
+                    if (action == "start") {
+                        audio.fadeOutMusic(500);
+                        audio.playMusic("game_theme", 0.4f);
+                        start_level(0);
+                    }
+                    else if (action == "quit") {
+                        running = false;
+                    }
+                }
+            }
+        }
+    }
+
+    void update() {
+        if (state == GameState::MENU) {
+            float mx, my;
+            SDL_GetMouseState(&mx, &my);
+            menu.update(mx, my);
+
+        }
+        else if (state == GameState::PLAYING) {
+            float mx, my;
+            SDL_GetMouseState(&mx, &my);
+
+            player.update(level->platforms, level->platform_solid,
+                level->breakable_boxes, mx, my, audio);
+            level->update(player, from_level, audio);
+
+            // Check door collisions
+            SDL_FRect player_rect = player.rect;
+            for (auto& door : level->doors) {
+                SDL_FRect door_rect = door.rect;
+                if (SDL_HasRectIntersectionFloat(&player_rect, &door_rect) && !door.locked) {
+                    int target = door.target_level;
+                    if (target == -1) {
+                        // Exit door - go to ending
+                        state = GameState::ENDING;
+                        ending_screen = EndingScreen();
+                        audio.fadeOutMusic(1000);
+                        audio.playMusic("ending_theme", 0.3f);
+                    }
+                    else {
+                        start_transition(target);
+                    }
+                    break;
+                }
+            }
+
+        }
+        else if (state == GameState::TRANSITIONING) {
+            update_transition();
+
+        }
+        else if (state == GameState::ENDING) {
+            if (ending_screen.update()) {
+                // Return to menu
+                state = GameState::MENU;
+                menu = Menu();
+                audio.fadeOutMusic(500);
+                audio.playMusic("menu_theme", 0.4f);
+            }
+        }
+    }
+
+    void update_transition() {
+        const float TRANSITION_SPEED = 0.02f;
+
+        if (transition.phase == TransitionState::SWIPE) {
+            transition.progress += TRANSITION_SPEED;
+            transition.offset_x = transition.progress * SCREEN_WIDTH;
+
+            if (transition.progress >= 1.0f) {
+                // Transition complete
+                state = GameState::PLAYING;
+                transition.cleanup(renderer);
+            }
+        }
+    }
+
+    void draw_level() {
+        if (!level) return;
+
+        level->draw(draw, renderer);
+        player.draw(draw);
+
+        // UI overlay
+        draw_ui();
+    }
+
+    void draw_ui() {
+        // Crosshair for fireball
+        if (player.can_fireball) {
+            float mx, my;
+            SDL_GetMouseState(&mx, &my);
+
+            draw.color(255, 255, 255, 100);
+            draw.circle(static_cast<int>(mx), static_cast<int>(my), 8);
+            draw.line(mx - 10, my, mx + 10, my);
+            draw.line(mx, my - 10, mx, my + 10);
+        }
+
+        // UI text
+        int ui_y = 20;
+
+        // Abilities
+        if (player.abilities["jump"]) {
+            SDL_SetRenderDrawColor(renderer, 180, 180, 180, 255);
+            if (player.abilities["double_jump"]) {
+                SDL_RenderDebugText(renderer, 20, ui_y, "Double Jump: Space");
+                ui_y += 20;
+            }
+            else {
+                SDL_RenderDebugText(renderer, 20, ui_y, "Jump: Space");
+                ui_y += 20;
+            }
+        }
+
+        if (player.abilities["fireball"]) {
+            SDL_SetRenderDrawColor(renderer, 180, 180, 180, 255);
+            SDL_RenderDebugText(renderer, 20, ui_y, "Fireball: F (aim with mouse)");
+            ui_y += 20;
+        }
+
+        // Keys
+        if (player.keys > 0) {
+            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+            char keys_text[32];
+            SDL_snprintf(keys_text, sizeof(keys_text), "Keys: %d", player.keys);
+            SDL_RenderDebugText(renderer, 20, ui_y, keys_text);
+            ui_y += 20;
+        }
+
+        // Level indicator
+        SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);
+        char level_text[32];
+        SDL_snprintf(level_text, sizeof(level_text), "Floor %d", current_level + 1);
+        SDL_RenderDebugText(renderer, SCREEN_WIDTH - 80, 20, level_text);
+
+        // Drop hint
+        SDL_SetRenderDrawColor(renderer, 100, 100, 100, 100);
+        SDL_RenderDebugText(renderer, 20, SCREEN_HEIGHT - 30, "S: Drop through platforms");
+    }
+
+    void draw_transition() {
+        if (transition.phase == TransitionState::SWIPE) {
+            // Clear screen
+            draw.color(40, 40, 40);
+            draw.clear();
+
+            if (transition.old_level_texture && transition.new_level_texture) {
+                // Draw old level sliding out
+                SDL_FRect old_rect = {
+                    -transition.offset_x, 0,
+                    static_cast<float>(SCREEN_WIDTH),
+                    static_cast<float>(SCREEN_HEIGHT)
+                };
+                SDL_RenderTexture(renderer, transition.old_level_texture, nullptr, &old_rect);
+
+                // Draw new level sliding in
+                SDL_FRect new_rect = {
+                    SCREEN_WIDTH - transition.offset_x, 0,
+                    static_cast<float>(SCREEN_WIDTH),
+                    static_cast<float>(SCREEN_HEIGHT)
+                };
+                SDL_RenderTexture(renderer, transition.new_level_texture, nullptr, &new_rect);
+
+                // Draw transition effect (vertical line)
+                float line_x = SCREEN_WIDTH - transition.offset_x;
+                for (int i = 20; i > 0; i--) {
+                    int alpha = 255 * (i / 20);
+                    draw.color(255, 255, 255, alpha);
+                    draw.line(line_x - i, 0, line_x - i, SCREEN_HEIGHT);
+                    draw.line(line_x + i, 0, line_x + i, SCREEN_HEIGHT);
+                }
+            }
+        }
+    }
+
+    void render() {
+        draw.color(180, 180, 180);
+        draw.clear();
+
+        if (state == GameState::MENU) {
+            menu.draw(draw, renderer);
+
+        }
+        else if (state == GameState::PLAYING) {
+            draw_level();
+
+        }
+        else if (state == GameState::TRANSITIONING) {
+            draw_transition();
+
+        }
+        else if (state == GameState::ENDING) {
+            ending_screen.draw(draw, renderer);
+        }
+
+        draw.present();
+    }
+
+    void run() {
+        Uint64 frame_start, frame_time;
+        const Uint64 frame_delay = 1000 / FPS;
+
+        while (running) {
+            frame_start = SDL_GetTicks();
+
+            handle_events();
+            update();
+            render();
+
+            frame_time = SDL_GetTicks() - frame_start;
+            if (frame_delay > frame_time) {
+                SDL_Delay(static_cast<Uint32>(frame_delay - frame_time));
+            }
+        }
+    }
+};
+
+// ===== MAIN ENTRY POINT =====
+int main(int argc, char* argv[]) {
+    (void)argc; (void)argv;
+
+    SDL_SetAppMetadata("Limbo Dungeon", "1.0", "com.example.limbo");
+
+    Game game;
+    if (!game.init()) {
+        SDL_Log("Failed to initialize game");
+        return -1;
+    }
+
+    game.run();
+    return 0;
+}
