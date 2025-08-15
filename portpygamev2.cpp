@@ -706,7 +706,9 @@ public:
     }
 
     void set_abilities(const std::unordered_map<std::string, bool>& abs) {
-        abilities = abs;
+        for(auto &e:abs){
+            abilities[e.first] = e.second;
+        }
         jump_available = abilities["jump"];
         double_jump_available = abilities["double_jump"];
         can_fireball = abilities["fireball"];
@@ -752,9 +754,9 @@ public:
         }
 
         // Initialize abilities defaults
-        player_abilities["jump"] = false;
+        /*player_abilities["jump"] = false;
         player_abilities["double_jump"] = false;
-        player_abilities["fireball"] = false;
+        player_abilities["fireball"] = false;*/
 
         load_level();
     }
