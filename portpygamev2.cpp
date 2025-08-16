@@ -1415,7 +1415,6 @@ void Player::update(const std::vector<SDL_FRect>& platforms,
     const bool* keys_state = SDL_GetKeyboardState(nullptr);
     vel_x = 0;
 
-    SDL_Log("xxAfter collision: Player at (%.1f, %.1f), rect size (%.1f, %.1f)", rect.x, rect.y, rect.w, rect.h);
     // Movement
     if (keys_state[SDL_SCANCODE_LEFT] || keys_state[SDL_SCANCODE_A]) {
         vel_x = -PLAYER_SPEED;
@@ -1489,7 +1488,6 @@ void Player::update(const std::vector<SDL_FRect>& platforms,
         dropping = false;
     }
 
-    SDL_Log("2After collision: Player at (%.1f, %.1f), rect size (%.1f, %.1f), speed (%.1f, %.1f)", rect.x, rect.y, rect.w, rect.h, vel_x, vel_y);
 
     // Jumping
     bool jump_key = keys_state[SDL_SCANCODE_SPACE] ||
@@ -1547,19 +1545,17 @@ void Player::update(const std::vector<SDL_FRect>& platforms,
 
     bool was_falling = !on_ground && vel_y > 5;
 
-    // Move horizontally
-    rect.x += vel_x;
-    SDL_Log("3After collision: Player at (%.1f, %.1f), rect size (%.1f, %.1f), speed (%.1f, %.1f)", rect.x, rect.y, rect.w, rect.h, vel_x, vel_y);
-    rect.x = std::max(0.0f, std::min(rect.x, SCREEN_WIDTH - rect.w));
-    SDL_Log("4After collision: Player at (%.1f, %.1f), rect size (%.1f, %.1f), speed (%.1f, %.1f)", rect.x, rect.y, rect.w, rect.h, vel_x, vel_y);
-    check_collisions(platforms, solid_flags, 'h');
-    SDL_Log("5After collision: Player at (%.1f, %.1f), rect size (%.1f, %.1f), spewed (%.1f, %.1f)", rect.x, rect.y, rect.w, rect.h, vel_x, vel_y);
-
     // Move vertically
     rect.y += vel_y;
     on_ground = false;
     on_drop_platform = false;
     check_collisions(platforms, solid_flags, 'v');
+
+    // Move horizontally
+    rect.x += vel_x;
+    rect.x = std::max(0.0f, std::min(rect.x, SCREEN_WIDTH - rect.w));
+    check_collisions(platforms, solid_flags, 'h');
+    
 
     // Landing effect
     if (on_ground && was_falling) {
@@ -1607,17 +1603,28 @@ void Player::check_collisions(const std::vector<SDL_FRect>& platforms,
     for (size_t i = 0; i < platforms.size(); ++i) {
         const SDL_FRect& platform = platforms[i];
         bool is_solid = solid_flags[i];
-        SDL_Log("platfor After collision: platform at (%.1f, %.1f)", platform.x, platform.y);
         if (SDL_HasRectIntersectionFloat(&rect, &platform)) {
             if (direction == 'h') {
                 if (is_solid) {
-                    SDL_Log("6After collision: Player at (%.1f, %.1f), rect size (%.1f, %.1f), speed (%.1f, %.1f)", rect.x, rect.y, rect.w, rect.h, vel_x, vel_y);
-                    /*if (vel_x > 0) {
-                        rect.x = platform.x - rect.w;
+                    // Check vertical overlap to determine if this is a wall or walkable platform
+                    float vertical_overlap = std::min(rect.y + rect.h, platform.y + platform.h) -
+                        std::max(rect.y, platform.y);
+
+                    // Only block if there's significant vertical overlap (hitting a wall)
+                    // Allow movement if player's feet are near platform top (can step up/down)
+                    if (vertical_overlap > 10) { // Threshold for step height
+                        float overlap_left = (rect.x + rect.w) - platform.x;
+                        float overlap_right = (platform.x + platform.w) - rect.x;
+
+                        if (vel_x > 0 && overlap_left > 0 && overlap_left < rect.w) {
+                            // Moving right and hitting a wall
+                            rect.x = platform.x - rect.w;
+                        }
+                        else if (vel_x < 0 && overlap_right > 0 && overlap_right < rect.w) {
+                            // Moving left and hitting a wall
+                            rect.x = platform.x + platform.w;
+                        }
                     }
-                    else if(vel_x < 0){
-                        rect.x = platform.x + platform.w;
-                    }*/
                 }
             }
             else { // vertical
@@ -1632,12 +1639,17 @@ void Player::check_collisions(const std::vector<SDL_FRect>& platforms,
                     }
                 }
                 else {
-                    if (vel_y > 0) {
+                    float overlap_top = (rect.y + rect.h) - platform.y;
+                    float overlap_bottom = (platform.y + platform.h) - rect.y;
+
+                    if (vel_y > 0 && overlap_top > 0 && overlap_top < rect.h) {
+                        // Moving down and colliding from top
                         rect.y = platform.y - rect.h;
                         vel_y = 0;
                         on_ground = true;
                     }
-                    else if(vel_y < 0){
+                    else if (vel_y < 0 && overlap_bottom > 0 && overlap_bottom < rect.h) {
+                        // Moving up and colliding from bottom
                         rect.y = platform.y + platform.h;
                         vel_y = 0;
                     }
