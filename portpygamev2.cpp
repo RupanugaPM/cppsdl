@@ -1606,15 +1606,17 @@ void Player::check_collisions(const std::vector<SDL_FRect>& platforms,
         if (SDL_HasRectIntersectionFloat(&rect, &platform)) {
             if (direction == 'h') {
                 if (is_solid) {
-                    float change = 0;
-                    if (vel_x > 0) {
-                        change = platform.x - rect.w;
+                    // Only resolve if we're actually colliding from the side
+                    float overlap_left = (rect.x + rect.w) - platform.x;
+                    float overlap_right = (platform.x + platform.w) - rect.x;
+                    
+                    if (vel_x > 0 && overlap_left > 0 && overlap_left < rect.w) {
+                        // Moving right and colliding from left side
+                        rect.x = platform.x - rect.w;
                     }
-                    else if(vel_x < 0){
-                        change = platform.x + platform.w;
-                    }
-                    if (abs(change - rect.x) <= rect.w) {
-                        rect.x = change;
+                    else if (vel_x < 0 && overlap_right > 0 && overlap_right < rect.w) {
+                        // Moving left and colliding from right side
+                        rect.x = platform.x + platform.w;
                     }
                 }
             }
@@ -1630,18 +1632,20 @@ void Player::check_collisions(const std::vector<SDL_FRect>& platforms,
                     }
                 }
                 else {
-                    float change = 0;
-                    if (vel_y > 0) {
-                        change = platform.y - rect.h;
+                    // Only resolve if we're actually colliding from top/bottom
+                    float overlap_top = (rect.y + rect.h) - platform.y;
+                    float overlap_bottom = (platform.y + platform.h) - rect.y;
+                    
+                    if (vel_y > 0 && overlap_top > 0 && overlap_top < rect.h) {
+                        // Moving down and colliding from top
+                        rect.y = platform.y - rect.h;
                         vel_y = 0;
                         on_ground = true;
                     }
-                    else if(vel_y < 0){
-                        change = platform.y + platform.h;
+                    else if (vel_y < 0 && overlap_bottom > 0 && overlap_bottom < rect.h) {
+                        // Moving up and colliding from bottom
+                        rect.y = platform.y + platform.h;
                         vel_y = 0;
-                    }
-                    if (abs(change - rect.y) <= rect.h) {
-                        rect.y = change;
                     }
                 }
             }
