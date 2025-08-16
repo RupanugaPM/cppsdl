@@ -1606,17 +1606,24 @@ void Player::check_collisions(const std::vector<SDL_FRect>& platforms,
         if (SDL_HasRectIntersectionFloat(&rect, &platform)) {
             if (direction == 'h') {
                 if (is_solid) {
-                    // Only resolve if we're actually colliding from the side
-                    float overlap_left = (rect.x + rect.w) - platform.x;
-                    float overlap_right = (platform.x + platform.w) - rect.x;
-                    
-                    if (vel_x > 0 && overlap_left > 0 && overlap_left < rect.w) {
-                        // Moving right and colliding from left side
-                        rect.x = platform.x - rect.w;
-                    }
-                    else if (vel_x < 0 && overlap_right > 0 && overlap_right < rect.w) {
-                        // Moving left and colliding from right side
-                        rect.x = platform.x + platform.w;
+                    // Check vertical overlap to determine if this is a wall or walkable platform
+                    float vertical_overlap = std::min(rect.y + rect.h, platform.y + platform.h) -
+                        std::max(rect.y, platform.y);
+
+                    // Only block if there's significant vertical overlap (hitting a wall)
+                    // Allow movement if player's feet are near platform top (can step up/down)
+                    if (vertical_overlap > 10) { // Threshold for step height
+                        float overlap_left = (rect.x + rect.w) - platform.x;
+                        float overlap_right = (platform.x + platform.w) - rect.x;
+
+                        if (vel_x > 0 && overlap_left > 0 && overlap_left < rect.w) {
+                            // Moving right and hitting a wall
+                            rect.x = platform.x - rect.w;
+                        }
+                        else if (vel_x < 0 && overlap_right > 0 && overlap_right < rect.w) {
+                            // Moving left and hitting a wall
+                            rect.x = platform.x + platform.w;
+                        }
                     }
                 }
             }
@@ -1632,10 +1639,9 @@ void Player::check_collisions(const std::vector<SDL_FRect>& platforms,
                     }
                 }
                 else {
-                    // Only resolve if we're actually colliding from top/bottom
                     float overlap_top = (rect.y + rect.h) - platform.y;
                     float overlap_bottom = (platform.y + platform.h) - rect.y;
-                    
+
                     if (vel_y > 0 && overlap_top > 0 && overlap_top < rect.h) {
                         // Moving down and colliding from top
                         rect.y = platform.y - rect.h;
