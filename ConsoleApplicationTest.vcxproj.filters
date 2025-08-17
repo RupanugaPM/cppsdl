@@ -33,7 +33,7 @@
     <ClCompile Include="particlesystem.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="TestFirework.cpp">
+    <ClCompile Include="Firework.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="portpygame.cpp">
