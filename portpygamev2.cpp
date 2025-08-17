@@ -1,5 +1,3 @@
-
-
 // main.cpp - COMPLETE SDL3 Limbo-style game implementation
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
