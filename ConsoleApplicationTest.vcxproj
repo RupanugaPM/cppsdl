@@ -139,7 +139,7 @@
     <ClCompile Include="portpygame.cpp" />
     <ClCompile Include="portpygamev2.cpp" />
     <ClCompile Include="renderer2d.cpp" />
-    <ClCompile Include="TestFirework.cpp" />
+    <ClCompile Include="Firework.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="BreakableBox.h" />
