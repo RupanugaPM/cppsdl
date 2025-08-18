@@ -1561,7 +1561,7 @@ public:
 
     void createAuroraEffect() {
         // Aurora waves
-        for (int i = 0; i < 3; ++i) {
+        for (int i = 0; i < 1; ++i) {
             auto aurora = std::make_unique<ParticleEmitter>();
             aurora->position = { SCREEN_WIDTH / 2.0f, 200.0f + i * 50 };
             aurora->emissionRate = 100;
