@@ -1,3 +1,4 @@
+/*
 // main.cpp - COMPLETE SDL3 Limbo-style game implementation
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -2555,17 +2556,18 @@ public:
 };
 
 // ===== MAIN ENTRY POINT =====
-int main(int argc, char* argv[]) {
-    (void)argc; (void)argv;
-
-    SDL_SetAppMetadata("Limbo Dungeon", "1.0", "com.example.limbo");
-
-    Game game;
-    if (!game.init()) {
-        SDL_Log("Failed to initialize game");
-        return -1;
-    }
-
-    game.run();
-    return 0;
-}
+//int main(int argc, char* argv[]) {
+//    (void)argc; (void)argv;
+//
+//    SDL_SetAppMetadata("Limbo Dungeon", "1.0", "com.example.limbo");
+//
+//    Game game;
+//    if (!game.init()) {
+//        SDL_Log("Failed to initialize game");
+//        return -1;
+//    }
+//
+//    game.run();
+//    return 0;
+//}
+*/

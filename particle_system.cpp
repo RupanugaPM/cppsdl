@@ -1,14 +1,225 @@
-// particle_system.cpp - Implementation
-#include "particle_system.hpp"
+// particle_system.cpp - Complete Particle System with Testbed
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h>
+#include <vector>
+#include <memory>
+#include <deque>
+#include <unordered_map>
+#include <functional>
+#include <algorithm>
+#include <cmath>
+#include <string>
+#include <sstream>
 #include <chrono>
+#include "renderer2d.cpp"  // Your Draw struct
+#include "utils.cpp"        // Utils struct we just created
 
-namespace ParticleSystem {
+// Particle system enums
+enum class ParticleShape {
+    CIRCLE,
+    SQUARE,
+    TRIANGLE,
+    STAR,
+    HEXAGON,
+    RING,
+    HEART,
+    DIAMOND,
+    CROSS,
+    SPIRAL,
+    LIGHTNING,
+    SMOKE_PUFF,
+    FLAME,
+    SPARKLE,
+    BUBBLE,
+    CUSTOM
+};
 
-    // Static texture cache
-    std::unordered_map<std::string, SDL_Texture*> ParticleEmitter::textureCache;
+enum class BlendMode {
+    NORMAL,
+    ADD,
+    MULTIPLY,
+    SCREEN,
+    OVERLAY,
+    SOFT_LIGHT,
+    COLOR_DODGE
+};
 
-    // ===== Particle Implementation =====
-    void Particle::update(float dt) {
+enum class EmissionPattern {
+    POINT,
+    CIRCLE,
+    RING,
+    CONE,
+    BOX,
+    SPHERE,
+    LINE,
+    SPIRAL,
+    BURST,
+    WAVE,
+    FOUNTAIN
+};
+
+enum class ParticleBehavior {
+    NONE,
+    GRAVITY,
+    WIND,
+    TURBULENCE,
+    ATTRACT,
+    REPEL,
+    ORBIT,
+    SWIRL,
+    FLOCK,
+    SEEK,
+    FLEE,
+    WANDER,
+    FLOW_FIELD,
+    MAGNETIC
+};
+
+// Color ramp point for gradients
+struct ColorRampPoint {
+    float t;  // Time (0-1)
+    Color color;
+
+    ColorRampPoint(float time, const Color& col) : t(time), color(col) {}
+};
+
+// Force field for particle physics
+struct ForceField {
+    Vec2 position;
+    float radius;
+    float strength;
+    float falloff = 2.0f;
+
+    enum Type {
+        ATTRACT,
+        REPEL,
+        TURBULENCE,
+        VORTEX
+    } type;
+
+    Vec2 getForce(const Vec2& particlePos) const {
+        Vec2 diff = position - particlePos;
+        float distance = diff.length();
+
+        if (distance > radius || distance < 0.001f) return { 0, 0 };
+
+        float forceMagnitude = strength * std::pow(1.0f - distance / radius, falloff);
+
+        switch (type) {
+        case ATTRACT:
+            return diff.normalized() * forceMagnitude;
+        case REPEL:
+            return diff.normalized() * -forceMagnitude;
+        case TURBULENCE:
+            return Vec2::fromAngle(Utils::randomFloat(0, TWO_PI), forceMagnitude);
+        case VORTEX: {
+            Vec2 tangent = diff.perpendicular();
+            return tangent.normalized() * forceMagnitude;
+        }
+        }
+        return { 0, 0 };
+    }
+};
+
+// Main Particle struct
+struct Particle {
+    // Physics
+    Vec2 position;
+    Vec2 velocity;
+    Vec2 acceleration;
+    Vec2 previousPos;
+    float mass = 1.0f;
+    float drag = 0.98f;
+    float bounce = 0.8f;
+
+    // Visual
+    float size;
+    float startSize;
+    float endSize;
+    float rotation = 0;
+    float angularVelocity = 0;
+    Color color;
+    std::vector<ColorRampPoint> colorRamp;
+    ParticleShape shape = ParticleShape::CIRCLE;
+    BlendMode blendMode = BlendMode::ADD;
+    float glowIntensity = 0;
+    float distortionAmount = 0;
+
+    // Lifetime
+    float age = 0;
+    float lifetime = 1.0f;
+    float fadeInTime = 0.1f;
+    float fadeOutTime = 0.2f;
+
+    // Trail
+    std::deque<Vec2> trail;
+    int maxTrailLength = 0;
+    float trailFadeRate = 0.9f;
+
+    // Behaviors
+    std::vector<ParticleBehavior> behaviors;
+    Vec2 target;
+    float behaviorStrength = 1.0f;
+
+    // Special effects
+    bool hasGlow = false;
+    bool hasDistortion = false;
+    bool hasShadow = false;
+    float pulseRate = 0;
+    float pulseAmount = 0;
+    float shimmerRate = 0;
+
+    // Collision
+    bool collides = false;
+    float collisionRadius = 0;
+
+    // Custom data
+    std::unordered_map<std::string, float> customData;
+
+    // Constructor
+    Particle() {
+        reset();
+    }
+
+    // Reset particle to initial state
+    void reset() {
+        position = { 0, 0 };
+        velocity = { 0, 0 };
+        acceleration = { 0, 0 };
+        previousPos = { 0, 0 };
+        age = 0;
+        rotation = 0;
+        angularVelocity = 0;
+        size = startSize = endSize = 10;
+        trail.clear();
+        behaviors.clear();
+        customData.clear();
+        mass = 1.0f;
+        drag = 0.98f;
+        bounce = 0.8f;
+        hasGlow = false;
+        hasDistortion = false;
+        hasShadow = false;
+        pulseRate = 0;
+        pulseAmount = 0;
+        shimmerRate = 0;
+        collides = false;
+        collisionRadius = 5;
+        lifetime = 1.0f;
+        fadeInTime = 0.1f;
+        fadeOutTime = 0.2f;
+        maxTrailLength = 0;
+        trailFadeRate = 0.9f;
+        behaviorStrength = 1.0f;
+        target = { 0, 0 };
+        shape = ParticleShape::CIRCLE;
+        blendMode = BlendMode::ADD;
+        glowIntensity = 0;
+        distortionAmount = 0;
+    }
+
+    // Update particle
+    void update(float dt) {
         age += dt;
 
         // Store previous position for motion blur
@@ -22,7 +233,7 @@ namespace ParticleSystem {
         velocity *= drag;
         position += velocity * dt;
 
-        // Clear acceleration
+        // Clear acceleration for next frame
         acceleration = { 0, 0 };
 
         // Update rotation
@@ -36,18 +247,23 @@ namespace ParticleSystem {
             }
         }
 
-        // Pulse effect
+        // Update size with pulse effect
         if (pulseRate > 0) {
             float pulse = std::sin(age * pulseRate * TWO_PI) * pulseAmount;
             size = getCurrentSize() * (1.0f + pulse);
         }
+        else {
+            size = getCurrentSize();
+        }
     }
 
-    void Particle::applyForce(const Vec2& force) {
+    // Apply force to particle
+    void applyForce(const Vec2& force) {
         acceleration += force / mass;
     }
 
-    void Particle::applyBehaviors(float dt) {
+    // Apply behaviors
+    void applyBehaviors(float dt) {
         for (auto behavior : behaviors) {
             switch (behavior) {
             case ParticleBehavior::GRAVITY:
@@ -55,11 +271,11 @@ namespace ParticleSystem {
                 break;
 
             case ParticleBehavior::WIND:
-                applyForce({ random_float(-10, 10), 0 });
+                applyForce({ Utils::randomFloat(-10, 10), 0 });
                 break;
 
             case ParticleBehavior::TURBULENCE: {
-                float noise = ParticleUtils::perlinNoise(position.x * 0.01f, position.y * 0.01f);
+                float noise = Utils::perlinNoise(position.x * 0.01f, position.y * 0.01f);
                 applyForce({ noise * 50, noise * 50 });
                 break;
             }
@@ -80,9 +296,18 @@ namespace ParticleSystem {
 
             case ParticleBehavior::ORBIT: {
                 Vec2 toTarget = target - position;
-                Vec2 tangent = { -toTarget.y, toTarget.x };
+                Vec2 tangent = toTarget.perpendicular();
                 tangent = tangent.normalized() * 50;
                 applyForce(tangent * behaviorStrength);
+
+                // Add slight attraction to maintain orbit
+                float dist = toTarget.length();
+                if (dist > 100) {
+                    applyForce(toTarget.normalized() * 10);
+                }
+                else if (dist < 50) {
+                    applyForce(toTarget.normalized() * -10);
+                }
                 break;
             }
 
@@ -95,8 +320,14 @@ namespace ParticleSystem {
             }
 
             case ParticleBehavior::WANDER: {
-                float wanderAngle = random_float(0, TWO_PI);
+                float wanderAngle = Utils::randomFloat(0, TWO_PI);
                 applyForce(Vec2::fromAngle(wanderAngle, 20));
+                break;
+            }
+
+            case ParticleBehavior::FLOW_FIELD: {
+                float angle = Utils::perlinNoise(position.x * 0.005f, position.y * 0.005f) * TWO_PI;
+                applyForce(Vec2::fromAngle(angle, 30));
                 break;
             }
 
@@ -106,7 +337,8 @@ namespace ParticleSystem {
         }
     }
 
-    Color Particle::getCurrentColor() const {
+    // Get current color based on lifetime
+    Color getCurrentColor() const {
         if (colorRamp.empty()) return color;
 
         float t = age / lifetime;
@@ -119,62 +351,127 @@ namespace ParticleSystem {
             }
         }
 
+        // Return last color if beyond range
         return colorRamp.back().color;
     }
 
-    float Particle::getCurrentSize() const {
+    // Get current size based on lifetime
+    float getCurrentSize() const {
         float t = age / lifetime;
-        float easedT = ParticleUtils::easeInOut(t);
+        float easedT = Utils::easeInOutCubic(t);
         return startSize + (endSize - startSize) * easedT;
     }
 
-    float Particle::getCurrentAlpha() const {
+    // Get current alpha based on fade in/out
+    float getCurrentAlpha() const {
         float alpha = 1.0f;
 
         // Fade in
-        if (age < fadeInTime) {
+        if (age < fadeInTime && fadeInTime > 0) {
             alpha *= age / fadeInTime;
         }
 
         // Fade out
         float fadeOutStart = lifetime - fadeOutTime;
-        if (age > fadeOutStart) {
+        if (age > fadeOutStart && fadeOutTime > 0) {
             alpha *= 1.0f - (age - fadeOutStart) / fadeOutTime;
         }
 
-        return alpha;
-    }
-
-    // ===== ForceField Implementation =====
-    Vec2 ForceField::getForce(const Vec2& particlePos) const {
-        Vec2 diff = position - particlePos;
-        float distance = diff.length();
-
-        if (distance > radius) return { 0, 0 };
-
-        float forceMagnitude = strength * std::pow(1.0f - distance / radius, falloff);
-
-        switch (type) {
-        case ATTRACT:
-            return diff.normalized() * forceMagnitude;
-
-        case REPEL:
-            return diff.normalized() * -forceMagnitude;
-
-        case TURBULENCE:
-            return Vec2::fromAngle(random_float(0, TWO_PI), forceMagnitude);
-
-        case VORTEX: {
-            Vec2 tangent = { -diff.y, diff.x };
-            return tangent.normalized() * forceMagnitude;
-        }
+        // Apply shimmer
+        if (shimmerRate > 0) {
+            float shimmer = std::sin(age * shimmerRate * TWO_PI) * 0.5f + 0.5f;
+            alpha *= 0.5f + shimmer * 0.5f;
         }
 
-        return { 0, 0 };
+        return Utils::clamp(alpha, 0.0f, 1.0f);
     }
 
-    // ===== ParticleEmitter Implementation =====
-    ParticleEmitter::ParticleEmitter() {
+    // Check if particle is still alive
+    bool isAlive() const {
+        return age < lifetime;
+    }
+};
+
+// Particle Emitter struct
+struct ParticleEmitter {
+    // Particle management
+    std::vector<std::unique_ptr<Particle>> activeParticles;
+    std::vector<std::unique_ptr<Particle>> particlePool;
+    size_t maxParticles = 5000;
+
+    // Transform
+    Vec2 position;
+    float rotation = 0;
+    Vec2 scale = { 1, 1 };
+
+    // Emission
+    bool active = true;
+    float emissionRate = 100;
+    float emissionAccumulator = 0;
+    EmissionPattern pattern = EmissionPattern::POINT;
+    float patternRadius = 50;
+    float patternAngle = TWO_PI;
+
+    // Burst emission
+    bool burstMode = false;
+    int burstCount = 100;
+    float burstInterval = 1.0f;
+    float burstTimer = 0;
+
+    // Particle property ranges
+    std::pair<float, float> lifetimeRange = { 1.0f, 2.0f };
+    std::pair<float, float> sizeRange = { 4.0f, 8.0f };
+    std::pair<float, float> speedRange = { 50.0f, 150.0f };
+    std::pair<float, float> angleRange = { 0, TWO_PI };
+    std::pair<float, float> angularVelRange = { -180.0f, 180.0f };
+    std::pair<float, float> massRange = { 0.8f, 1.2f };
+
+    // Visual properties
+    std::vector<ColorRampPoint> colorRamp;
+    ParticleShape shape = ParticleShape::CIRCLE;
+    BlendMode blendMode = BlendMode::ADD;
+    bool enableGlow = true;
+    float glowIntensity = 1.0f;
+    bool enableTrails = false;
+    int trailLength = 10;
+    float trailFadeRate = 0.9f;
+
+    // Physics
+    Vec2 gravity = { 0, 98 };
+    Vec2 wind = { 0, 0 };
+    float turbulence = 0;
+    float drag = 0.98f;
+    std::vector<ForceField> forceFields;
+
+    // Behaviors
+    std::vector<ParticleBehavior> behaviors;
+    Vec2 targetPosition;
+
+    // Special effects
+    bool enablePulse = false;
+    float pulseRate = 2.0f;
+    float pulseAmount = 0.2f;
+    bool enableShimmer = false;
+    float shimmerRate = 10.0f;
+    bool enableDistortion = false;
+    float distortionAmount = 0.1f;
+
+    // Collision
+    bool enableCollision = false;
+    std::vector<SDL_FRect> collisionRects;
+
+    // Callbacks
+    std::function<void(Particle&)> onParticleSpawn;
+    std::function<void(Particle&)> onParticleUpdate;
+    std::function<void(Particle&)> onParticleDeath;
+
+    // Constructor
+    ParticleEmitter() {
+        init();
+    }
+
+    // Initialize emitter
+    void init() {
         // Initialize particle pool
         for (size_t i = 0; i < maxParticles; ++i) {
             particlePool.push_back(std::make_unique<Particle>());
@@ -182,16 +479,147 @@ namespace ParticleSystem {
 
         // Default color ramp
         colorRamp = {
-            {0.0f, Color(255, 255, 255)},
-            {1.0f, Color(255, 255, 255, 0)}
+            ColorRampPoint(0.0f, Color(255, 255, 255)),
+            ColorRampPoint(1.0f, Color(255, 255, 255, 0))
         };
     }
 
-    ParticleEmitter::~ParticleEmitter() {
-        clear();
+    // Get particle from pool
+    Particle* getPooledParticle() {
+        if (particlePool.empty()) return nullptr;
+
+        Particle* p = particlePool.back().release();
+        particlePool.pop_back();
+        return p;
     }
 
-    void ParticleEmitter::update(float dt) {
+    // Return particle to pool
+    void returnToPool(std::unique_ptr<Particle> particle) {
+        if (particlePool.size() < maxParticles) {
+            particle->reset();
+            particlePool.push_back(std::move(particle));
+        }
+    }
+
+    // Get emission position based on pattern
+    Vec2 getEmissionPosition() const {
+        switch (pattern) {
+        case EmissionPattern::POINT:
+            return position;
+
+        case EmissionPattern::CIRCLE: {
+            float angle = Utils::randomFloat(0, TWO_PI);
+            float radius = Utils::randomFloat(0, patternRadius);
+            return position + Vec2::fromAngle(angle, radius);
+        }
+
+        case EmissionPattern::RING: {
+            float angle = Utils::randomFloat(0, TWO_PI);
+            return position + Vec2::fromAngle(angle, patternRadius);
+        }
+
+        case EmissionPattern::CONE: {
+            float angle = Utils::randomFloat(-patternAngle / 2, patternAngle / 2) + rotation;
+            float distance = Utils::randomFloat(0, patternRadius);
+            return position + Vec2::fromAngle(angle, distance);
+        }
+
+        case EmissionPattern::BOX: {
+            float x = Utils::randomFloat(-patternRadius, patternRadius);
+            float y = Utils::randomFloat(-patternRadius, patternRadius);
+            return position + Vec2(x, y);
+        }
+
+        case EmissionPattern::LINE: {
+            float t = Utils::randomFloat(-1, 1);
+            Vec2 dir = Vec2::fromAngle(rotation);
+            return position + dir * (t * patternRadius);
+        }
+
+        case EmissionPattern::SPIRAL: {
+            static float spiralAngle = 0;
+            spiralAngle += 0.5f;
+            float radius = patternRadius * std::fmod(spiralAngle / TWO_PI, 1.0f);
+            return position + Vec2::fromAngle(spiralAngle, radius);
+        }
+
+        case EmissionPattern::FOUNTAIN: {
+            float spreadAngle = Utils::randomFloat(-0.2f, 0.2f);
+            return position + Vec2(spreadAngle * patternRadius, 0);
+        }
+
+        default:
+            return position;
+        }
+    }
+
+    // Get emission velocity
+    Vec2 getEmissionVelocity() const {
+        float angle = Utils::randomFloat(angleRange.first, angleRange.second);
+        float speed = Utils::randomFloat(speedRange.first, speedRange.second);
+        return Vec2::fromAngle(angle, speed);
+    }
+
+    // Emit particles
+    void emit(int count = 1) {
+        for (int i = 0; i < count && activeParticles.size() < maxParticles; ++i) {
+            Particle* p = getPooledParticle();
+            if (!p) break;
+
+            // Initialize particle properties
+            p->position = getEmissionPosition();
+            p->velocity = getEmissionVelocity();
+            p->lifetime = Utils::randomFloat(lifetimeRange.first, lifetimeRange.second);
+            p->startSize = Utils::randomFloat(sizeRange.first, sizeRange.second);
+            p->endSize = p->startSize * 0.1f;
+            p->size = p->startSize;
+            p->rotation = Utils::randomFloat(0, TWO_PI);
+            p->angularVelocity = Utils::randomFloat(angularVelRange.first, angularVelRange.second);
+            p->mass = Utils::randomFloat(massRange.first, massRange.second);
+            p->drag = drag;
+
+            // Visual properties
+            p->colorRamp = colorRamp;
+            p->shape = shape;
+            p->blendMode = blendMode;
+            p->hasGlow = enableGlow;
+            p->glowIntensity = glowIntensity;
+            p->hasDistortion = enableDistortion;
+            p->distortionAmount = distortionAmount;
+
+            // Trail
+            p->maxTrailLength = enableTrails ? trailLength : 0;
+            p->trailFadeRate = trailFadeRate;
+
+            // Behaviors
+            p->behaviors = behaviors;
+            p->target = targetPosition;
+
+            // Pulse/shimmer
+            p->pulseRate = enablePulse ? pulseRate : 0;
+            p->pulseAmount = pulseAmount;
+            p->shimmerRate = enableShimmer ? shimmerRate : 0;
+
+            // Collision
+            p->collides = enableCollision;
+            p->collisionRadius = p->startSize / 2;
+
+            // Custom spawn callback
+            if (onParticleSpawn) {
+                onParticleSpawn(*p);
+            }
+
+            activeParticles.push_back(std::unique_ptr<Particle>(p));
+        }
+    }
+
+    // Burst emission
+    void burst() {
+        emit(burstCount);
+    }
+
+    // Update emitter and particles
+    void update(float dt) {
         // Update burst timer
         if (burstMode && active) {
             burstTimer += dt;
@@ -225,7 +653,7 @@ namespace ParticleSystem {
 
             // Apply turbulence
             if (turbulence > 0) {
-                float noise = ParticleUtils::perlinNoise(
+                float noise = Utils::perlinNoise(
                     p->position.x * 0.01f + p->age,
                     p->position.y * 0.01f + p->age
                 );
@@ -246,8 +674,14 @@ namespace ParticleSystem {
                     SDL_FPoint particlePoint = { p->position.x, p->position.y };
                     if (SDL_PointInRectFloat(&particlePoint, &rect)) {
                         // Simple bounce
-                        p->velocity.y *= -p->bounce;
-                        p->position.y = rect.y - p->collisionRadius;
+                        if (p->position.y < rect.y + rect.h / 2) {
+                            p->velocity.y *= -p->bounce;
+                            p->position.y = rect.y - p->collisionRadius;
+                        }
+                        else {
+                            p->velocity.y *= -p->bounce;
+                            p->position.y = rect.y + rect.h + p->collisionRadius;
+                        }
                     }
                 }
             }
@@ -259,7 +693,6 @@ namespace ParticleSystem {
                 }
 
                 // Return to pool
-                (*it)->reset();
                 returnToPool(std::move(*it));
                 it = activeParticles.erase(it);
             }
@@ -269,92 +702,33 @@ namespace ParticleSystem {
         }
     }
 
-    void ParticleEmitter::emit(int count) {
-        for (int i = 0; i < count && activeParticles.size() < maxParticles; ++i) {
-            Particle* p = getPooledParticle();
-            if (!p) break;
-
-            // Initialize particle
-            p->position = getEmissionPosition();
-            p->velocity = getEmissionVelocity();
-            p->lifetime = random_float(lifetimeRange.first, lifetimeRange.second);
-            p->startSize = random_float(sizeRange.first, sizeRange.second);
-            p->endSize = p->startSize * 0.1f;
-            p->size = p->startSize;
-            p->rotation = random_float(0, TWO_PI);
-            p->angularVelocity = random_float(angularVelRange.first, angularVelRange.second);
-            p->mass = random_float(massRange.first, massRange.second);
-            p->drag = drag;
-
-            // Visual properties
-            p->colorRamp = colorRamp;
-            p->shape = shape;
-            p->blendMode = blendMode;
-            p->hasGlow = enableGlow;
-            p->glowIntensity = glowIntensity;
-            p->hasDistortion = enableDistortion;
-            p->distortionAmount = distortionAmount;
-
-            // Trail
-            p->maxTrailLength = enableTrails ? trailLength : 0;
-
-            // Behaviors
-            p->behaviors = behaviors;
-            p->target = targetPosition;
-
-            // Pulse/shimmer
-            p->pulseRate = enablePulse ? pulseRate : 0;
-            p->pulseAmount = pulseAmount;
-            p->shimmerRate = enableShimmer ? shimmerRate : 0;
-
-            // Collision
-            p->collides = enableCollision;
-            p->collisionRadius = p->startSize / 2;
-
-            // Custom spawn callback
-            if (onParticleSpawn) {
-                onParticleSpawn(*p);
-            }
-
-            activeParticles.push_back(std::unique_ptr<Particle>(p));
-        }
-    }
-
-    void ParticleEmitter::burst() {
-        emit(burstCount);
-    }
-
-    void ParticleEmitter::clear() {
+    // Clear all particles
+    void clear() {
         for (auto& p : activeParticles) {
-            p->reset();
             returnToPool(std::move(p));
         }
         activeParticles.clear();
     }
 
-    void ParticleEmitter::draw(SDL_Renderer* renderer) {
+    // Draw particles
+    void draw(SDL_Renderer* renderer, Draw& draw) {
         // Sort particles by blend mode for proper rendering
         std::stable_sort(activeParticles.begin(), activeParticles.end(),
             [](const auto& a, const auto& b) {
                 return static_cast<int>(a->blendMode) < static_cast<int>(b->blendMode);
             });
 
-        // Draw particles
+        // Draw each particle
         for (auto& p : activeParticles) {
-            drawParticle(renderer, *p);
+            drawParticle(renderer, draw, *p);
         }
     }
 
-    void ParticleEmitter::drawParticle(SDL_Renderer* renderer, Particle& particle) {
+    // Draw individual particle
+    void drawParticle(SDL_Renderer* renderer, Draw& draw, Particle& particle) {
         Color color = particle.getCurrentColor();
-        float size = particle.getCurrentSize();
+        float size = particle.size;
         float alpha = particle.getCurrentAlpha();
-
-        // Apply shimmer
-        if (particle.shimmerRate > 0) {
-            float shimmer = std::sin(particle.age * particle.shimmerRate * TWO_PI) * 0.5f + 0.5f;
-            alpha *= 0.5f + shimmer * 0.5f;
-        }
 
         color.a *= alpha;
 
@@ -373,23 +747,23 @@ namespace ParticleSystem {
 
         // Draw trail
         if (!particle.trail.empty()) {
-            drawTrail(renderer, particle);
+            drawTrail(draw, particle);
         }
 
         // Draw glow
         if (particle.hasGlow) {
-            drawGlow(renderer, particle.position, size * 2, color, particle.glowIntensity);
+            drawGlow(draw, particle.position, size * 2, color, particle.glowIntensity);
         }
 
         // Draw main shape
-        drawShape(renderer, particle.shape, particle.position, size, particle.rotation, color);
+        drawShape(draw, particle.shape, particle.position, size, particle.rotation, color);
 
         // Reset blend mode
         SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     }
 
-    void ParticleEmitter::drawGlow(SDL_Renderer* renderer, const Vec2& pos, float size,
-        const Color& color, float intensity) {
+    // Draw glow effect
+    void drawGlow(Draw& draw, const Vec2& pos, float size, const Color& color, float intensity) {
         int layers = static_cast<int>(5 * intensity);
         for (int i = layers; i > 0; --i) {
             float t = static_cast<float>(i) / layers;
@@ -398,121 +772,119 @@ namespace ParticleSystem {
             float glowSize = size * (1.0f + t);
 
             SDL_Color c = glowColor.toSDL();
-            SDL_SetRenderDrawColor(renderer, c.r, c.g, c.b, c.a);
+            draw.color(c.r, c.g, c.b, c.a);
 
             // Draw glow circle
-            int segments = 32;
-            std::vector<SDL_FPoint> points;
-            for (int j = 0; j <= segments; ++j) {
-                float angle = (j / static_cast<float>(segments)) * TWO_PI;
-                points.push_back({
-                    pos.x + std::cos(angle) * glowSize,
-                    pos.y + std::sin(angle) * glowSize
-                    });
-            }
-            SDL_RenderLines(renderer, points.data(), static_cast<int>(points.size()));
+            draw.fill_circle(static_cast<int>(pos.x), static_cast<int>(pos.y),
+                static_cast<int>(glowSize));
         }
     }
 
-    void ParticleEmitter::drawTrail(SDL_Renderer* renderer, Particle& particle) {
+    // Draw particle trail
+    void drawTrail(Draw& draw, Particle& particle) {
         if (particle.trail.size() < 2) return;
 
         for (size_t i = 0; i < particle.trail.size() - 1; ++i) {
             float t = static_cast<float>(i) / particle.trail.size();
             Color trailColor = particle.getCurrentColor();
-            trailColor.a *= t * particle.trailFadeRate;
+            trailColor.a *= t * particle.trailFadeRate * particle.getCurrentAlpha();
 
             SDL_Color c = trailColor.toSDL();
-            SDL_SetRenderDrawColor(renderer, c.r, c.g, c.b, c.a);
+            draw.color(c.r, c.g, c.b, c.a);
 
-            SDL_RenderLine(renderer,
-                particle.trail[i].x, particle.trail[i].y,
-                particle.trail[i + 1].x, particle.trail[i + 1].y);
+            float trailSize = particle.size * (1.0f - t * 0.5f);
+            draw.fill_circle(static_cast<int>(particle.trail[i].x),
+                static_cast<int>(particle.trail[i].y),
+                static_cast<int>(trailSize));
         }
     }
 
-    void ParticleEmitter::drawShape(SDL_Renderer* renderer, ParticleShape shape, const Vec2& pos,
-        float size, float rotation, const Color& color) {
+    // Draw particle shape
+    void drawShape(Draw& draw, ParticleShape shape, const Vec2& pos, float size,
+        float rotation, const Color& color) {
         SDL_Color c = color.toSDL();
-        SDL_SetRenderDrawColor(renderer, c.r, c.g, c.b, c.a);
+        draw.color(c.r, c.g, c.b, c.a);
 
         switch (shape) {
         case ParticleShape::CIRCLE: {
-            int segments = std::max(8, static_cast<int>(size * 2));
-            for (int i = 0; i < segments; ++i) {
-                float angle1 = (i / static_cast<float>(segments)) * TWO_PI;
-                float angle2 = ((i + 1) / static_cast<float>(segments)) * TWO_PI;
-                SDL_RenderLine(renderer,
-                    pos.x + std::cos(angle1) * size,
-                    pos.y + std::sin(angle1) * size,
-                    pos.x + std::cos(angle2) * size,
-                    pos.y + std::sin(angle2) * size);
-            }
+            draw.fill_circle(static_cast<int>(pos.x), static_cast<int>(pos.y),
+                static_cast<int>(size));
             break;
         }
 
         case ParticleShape::SQUARE: {
-            SDL_FRect rect = { pos.x - size, pos.y - size, size * 2, size * 2 };
-            SDL_RenderFillRect(renderer, &rect);
+            draw.fill_rect(pos.x - size, pos.y - size, size * 2, size * 2);
             break;
         }
 
         case ParticleShape::STAR: {
-            auto points = ParticleUtils::generateStarPoints(5, size * 0.4f, size);
+            auto points = Utils::generateStarPoints(5, size * 0.4f, size);
             std::vector<SDL_FPoint> sdlPoints;
             for (const auto& p : points) {
                 Vec2 rotated = p.rotate(rotation);
                 sdlPoints.push_back({ pos.x + rotated.x, pos.y + rotated.y });
             }
-            SDL_RenderLines(renderer, sdlPoints.data(), static_cast<int>(sdlPoints.size()));
-            break;
-        }
-
-        case ParticleShape::HEART: {
-            auto points = ParticleUtils::generateHeartPoints(size);
-            std::vector<SDL_FPoint> sdlPoints;
-            for (const auto& p : points) {
-                Vec2 rotated = p.rotate(rotation);
-                sdlPoints.push_back({ pos.x + rotated.x, pos.y + rotated.y });
-            }
-            SDL_RenderLines(renderer, sdlPoints.data(), static_cast<int>(sdlPoints.size()));
+            draw.polygon(sdlPoints);
             break;
         }
 
         case ParticleShape::HEXAGON: {
-            std::vector<SDL_FPoint> points;
-            for (int i = 0; i <= 6; ++i) {
-                float angle = (i / 6.0f) * TWO_PI + rotation;
-                points.push_back({
-                    pos.x + std::cos(angle) * size,
-                    pos.y + std::sin(angle) * size
-                    });
+            auto points = Utils::generatePolygonPoints(6, size);
+            std::vector<SDL_FPoint> sdlPoints;
+            for (const auto& p : points) {
+                Vec2 rotated = p.rotate(rotation);
+                sdlPoints.push_back({ pos.x + rotated.x, pos.y + rotated.y });
             }
-            SDL_RenderLines(renderer, points.data(), static_cast<int>(points.size()));
+            draw.polygon(sdlPoints);
             break;
         }
 
         case ParticleShape::RING: {
-            int segments = 32;
-            float innerRadius = size * 0.6f;
-            for (int i = 0; i < segments; ++i) {
-                float angle = (i / static_cast<float>(segments)) * TWO_PI;
-                float nextAngle = ((i + 1) / static_cast<float>(segments)) * TWO_PI;
+            draw.circle(static_cast<int>(pos.x), static_cast<int>(pos.y),
+                static_cast<int>(size));
+            draw.circle(static_cast<int>(pos.x), static_cast<int>(pos.y),
+                static_cast<int>(size * 0.6f));
+            break;
+        }
 
-                // Outer ring
-                SDL_RenderLine(renderer,
-                    pos.x + std::cos(angle) * size,
-                    pos.y + std::sin(angle) * size,
-                    pos.x + std::cos(nextAngle) * size,
-                    pos.y + std::sin(nextAngle) * size);
-
-                // Inner ring
-                SDL_RenderLine(renderer,
-                    pos.x + std::cos(angle) * innerRadius,
-                    pos.y + std::sin(angle) * innerRadius,
-                    pos.x + std::cos(nextAngle) * innerRadius,
-                    pos.y + std::sin(nextAngle) * innerRadius);
+        case ParticleShape::HEART: {
+            auto points = Utils::generateHeartPoints(size);
+            std::vector<SDL_FPoint> sdlPoints;
+            for (const auto& p : points) {
+                Vec2 rotated = p.rotate(rotation);
+                sdlPoints.push_back({ pos.x + rotated.x, pos.y + rotated.y });
             }
+            draw.polygon(sdlPoints);
+            break;
+        }
+
+        case ParticleShape::TRIANGLE: {
+            auto points = Utils::generatePolygonPoints(3, size);
+            std::vector<SDL_FPoint> sdlPoints;
+            for (const auto& p : points) {
+                Vec2 rotated = p.rotate(rotation);
+                sdlPoints.push_back({ pos.x + rotated.x, pos.y + rotated.y });
+            }
+            draw.polygon(sdlPoints);
+            break;
+        }
+
+        case ParticleShape::DIAMOND: {
+            std::vector<SDL_FPoint> points = {
+                {pos.x, pos.y - size},
+                {pos.x + size * 0.7f, pos.y},
+                {pos.x, pos.y + size},
+                {pos.x - size * 0.7f, pos.y},
+                {pos.x, pos.y - size}
+            };
+            draw.polygon(points);
+            break;
+        }
+
+        case ParticleShape::CROSS: {
+            float thickness = size * 0.3f;
+            draw.fill_rect(pos.x - thickness / 2, pos.y - size, thickness, size * 2);
+            draw.fill_rect(pos.x - size, pos.y - thickness / 2, size * 2, thickness);
             break;
         }
 
@@ -522,149 +894,230 @@ namespace ParticleSystem {
             int segments = 5;
             for (int i = 0; i <= segments; ++i) {
                 float t = i / static_cast<float>(segments);
-                float x = pos.x + random_float(-size * 0.3f, size * 0.3f);
+                float x = pos.x + Utils::randomFloat(-size * 0.3f, size * 0.3f);
                 float y = pos.y - size + t * size * 2;
                 points.push_back({ x, y });
             }
-            SDL_RenderLines(renderer, points.data(), static_cast<int>(points.size()));
+            draw.lines(points);
             break;
         }
 
         case ParticleShape::FLAME: {
             // Draw flame-like shape
             for (int i = 0; i < 3; ++i) {
-                float offset = random_float(-size * 0.2f, size * 0.2f);
+                float offset = Utils::randomFloat(-size * 0.2f, size * 0.2f);
                 float height = size * (1.0f - i * 0.3f);
-                SDL_RenderLine(renderer,
-                    pos.x + offset, pos.y + size,
+                draw.line(pos.x + offset, pos.y + size,
                     pos.x + offset * 0.5f, pos.y - height);
             }
             break;
         }
 
+        case ParticleShape::SPARKLE: {
+            // Draw sparkle with radiating lines
+            for (int i = 0; i < 8; ++i) {
+                float angle = (i / 8.0f) * TWO_PI;
+                float innerRadius = size * 0.3f;
+                float outerRadius = size;
+                Vec2 inner = Vec2::fromAngle(angle, innerRadius);
+                Vec2 outer = Vec2::fromAngle(angle, outerRadius);
+                draw.line(pos.x + inner.x, pos.y + inner.y,
+                    pos.x + outer.x, pos.y + outer.y);
+            }
+            draw.fill_circle(static_cast<int>(pos.x), static_cast<int>(pos.y),
+                static_cast<int>(size * 0.3f));
+            break;
+        }
+
+        case ParticleShape::BUBBLE: {
+            // Draw bubble with highlight
+            draw.circle(static_cast<int>(pos.x), static_cast<int>(pos.y),
+                static_cast<int>(size));
+            // Highlight
+            draw.fill_circle(static_cast<int>(pos.x - size * 0.3f),
+                static_cast<int>(pos.y - size * 0.3f),
+                static_cast<int>(size * 0.2f));
+            break;
+        }
+
+        case ParticleShape::SMOKE_PUFF: {
+            // Draw cloud-like shape
+            for (int i = 0; i < 5; ++i) {
+                float angle = (i / 5.0f) * TWO_PI;
+                float offsetRadius = size * 0.5f;
+                Vec2 offset = Vec2::fromAngle(angle, offsetRadius);
+                draw.fill_circle(static_cast<int>(pos.x + offset.x),
+                    static_cast<int>(pos.y + offset.y),
+                    static_cast<int>(size * 0.6f));
+            }
+            draw.fill_circle(static_cast<int>(pos.x), static_cast<int>(pos.y),
+                static_cast<int>(size * 0.7f));
+            break;
+        }
+
         default:
             // Fallback to circle
-            SDL_RenderPoint(renderer, pos.x, pos.y);
+            draw.fill_circle(static_cast<int>(pos.x), static_cast<int>(pos.y),
+                static_cast<int>(size));
             break;
         }
     }
 
-    Particle* ParticleEmitter::getPooledParticle() {
-        if (particlePool.empty()) return nullptr;
+    // Get particle count
+    size_t getParticleCount() const {
+        return activeParticles.size();
+    }
+};
 
-        Particle* p = particlePool.back().release();
-        particlePool.pop_back();
-        return p;
+// ===== TESTBED APPLICATION =====
+class ParticleTestbed {
+private:
+    // SDL components
+    SDL_Window* window;
+    SDL_Renderer* renderer;
+    Draw draw;
+
+    // Application state
+    bool running;
+    float deltaTime;
+    Uint64 lastFrameTime;
+
+    // Particle system
+    std::vector<std::unique_ptr<ParticleEmitter>> emitters;
+    int currentEffectIndex;
+    std::vector<std::string> effectNames;
+
+    // Mouse state
+    float mouseX, mouseY;
+    bool mousePressed;
+
+    // UI state
+    bool showStats;
+    bool showHelp;
+    bool paused;
+
+    // Performance tracking
+    int frameCount;
+    float fpsTimer;
+    float currentFPS;
+
+    // Screen dimensions
+    static constexpr int SCREEN_WIDTH = 1280;
+    static constexpr int SCREEN_HEIGHT = 720;
+
+public:
+    ParticleTestbed() : window(nullptr), renderer(nullptr), running(true),
+        deltaTime(0), lastFrameTime(0), currentEffectIndex(0),
+        mouseX(0), mouseY(0), mousePressed(false),
+        showStats(true), showHelp(false), paused(false),
+        frameCount(0), fpsTimer(0), currentFPS(0) {
+        initEffectNames();
     }
 
-    void ParticleEmitter::returnToPool(std::unique_ptr<Particle> particle) {
-        if (particlePool.size() < maxParticles) {
-            particlePool.push_back(std::move(particle));
-        }
+    ~ParticleTestbed() {
+        cleanup();
     }
 
-    Vec2 ParticleEmitter::getEmissionPosition() const {
-        switch (pattern) {
-        case EmissionPattern::POINT:
-            return position;
-
-        case EmissionPattern::CIRCLE: {
-            float angle = random_float(0, TWO_PI);
-            float radius = random_float(0, patternRadius);
-            return position + Vec2::fromAngle(angle, radius);
-        }
-
-        case EmissionPattern::RING: {
-            float angle = random_float(0, TWO_PI);
-            return position + Vec2::fromAngle(angle, patternRadius);
-        }
-
-        case EmissionPattern::CONE: {
-            float angle = random_float(-patternAngle / 2, patternAngle / 2) + rotation;
-            float distance = random_float(0, patternRadius);
-            return position + Vec2::fromAngle(angle, distance);
-        }
-
-        case EmissionPattern::BOX: {
-            float x = random_float(-patternRadius, patternRadius);
-            float y = random_float(-patternRadius, patternRadius);
-            return position + Vec2(x, y);
-        }
-
-        case EmissionPattern::LINE: {
-            float t = random_float(-1, 1);
-            Vec2 dir = Vec2::fromAngle(rotation);
-            return position + dir * (t * patternRadius);
-        }
-
-        case EmissionPattern::SPIRAL: {
-            static float spiralAngle = 0;
-            spiralAngle += 0.5f;
-            float radius = patternRadius * (spiralAngle / TWO_PI);
-            return position + Vec2::fromAngle(spiralAngle, radius);
-        }
-
-        default:
-            return position;
-        }
+    void initEffectNames() {
+        effectNames = {
+            "Fire Effect",
+            "Magic Particles",
+            "Explosion",
+            "Smoke",
+            "Rain",
+            "Snow",
+            "Lightning",
+            "Portal",
+            "Galaxy",
+            "Fountain",
+            "Confetti",
+            "Mouse Trail"
+        };
     }
 
-    Vec2 ParticleEmitter::getEmissionVelocity() const {
-        float angle = random_float(angleRange.first, angleRange.second);
-        float speed = random_float(speedRange.first, speedRange.second);
-        return Vec2::fromAngle(angle, speed);
-    }
+    bool init() {
+        // Initialize SDL
+        if (!SDL_Init(SDL_INIT_VIDEO)) {
+            SDL_Log("SDL_Init failed: %s", SDL_GetError());
+            return false;
+        }
 
-    // ===== ParticleSystemManager Implementation =====
-    ParticleEmitter* ParticleSystemManager::createEmitter() {
-        emitters.push_back(std::make_unique<ParticleEmitter>());
-        return emitters.back().get();
-    }
-
-    void ParticleSystemManager::removeEmitter(ParticleEmitter* emitter) {
-        emitters.erase(
-            std::remove_if(emitters.begin(), emitters.end(),
-                [emitter](const auto& e) { return e.get() == emitter; }),
-            emitters.end()
+        // Create window
+        window = SDL_CreateWindow(
+            "Particle System Testbed",
+            SCREEN_WIDTH, SCREEN_HEIGHT,
+            SDL_WINDOW_RESIZABLE
         );
-    }
 
-    void ParticleSystemManager::update(float dt) {
-        auto start = std::chrono::high_resolution_clock::now();
-
-        totalParticles = 0;
-        for (auto& emitter : emitters) {
-            emitter->update(dt);
-            totalParticles += static_cast<int>(emitter->getParticleCount());
+        if (!window) {
+            SDL_Log("Window creation failed: %s", SDL_GetError());
+            return false;
         }
 
-        auto end = std::chrono::high_resolution_clock::now();
-        updateTime = std::chrono::duration<float, std::milli>(end - start).count();
-    }
-
-    void ParticleSystemManager::draw() {
-        auto start = std::chrono::high_resolution_clock::now();
-
-        for (auto& emitter : emitters) {
-            emitter->draw(renderer);
+        // Create renderer
+        renderer = SDL_CreateRenderer(window, nullptr);
+        if (!renderer) {
+            SDL_Log("Renderer creation failed: %s", SDL_GetError());
+            return false;
         }
 
-        auto end = std::chrono::high_resolution_clock::now();
-        drawTime = std::chrono::duration<float, std::milli>(end - start).count();
+        SDL_SetRenderVSync(renderer, 1);
+        draw.set_renderer(renderer);
+
+        // Initialize utils
+        Utils::initRandom();
+
+        // Load first effect
+        loadEffect(0);
+
+        lastFrameTime = SDL_GetTicks();
+
+        return true;
     }
 
-    void ParticleSystemManager::clear() {
+    void cleanup() {
         emitters.clear();
+
+        if (renderer) {
+            SDL_DestroyRenderer(renderer);
+            renderer = nullptr;
+        }
+
+        if (window) {
+            SDL_DestroyWindow(window);
+            window = nullptr;
+        }
+
+        SDL_Quit();
     }
 
-    // Preset effects implementation
-    ParticleEmitter* ParticleSystemManager::createFireEffect(const Vec2& pos) {
-        auto emitter = createEmitter();
-        emitter->position = pos;
+    void loadEffect(int index) {
+        currentEffectIndex = index;
+        emitters.clear();
+
+        switch (index) {
+        case 0: createFireEffect(); break;
+        case 1: createMagicEffect(); break;
+        case 2: createExplosionEffect(); break;
+        case 3: createSmokeEffect(); break;
+        case 4: createRainEffect(); break;
+        case 5: createSnowEffect(); break;
+        case 6: createLightningEffect(); break;
+        case 7: createPortalEffect(); break;
+        case 8: createGalaxyEffect(); break;
+        case 9: createFountainEffect(); break;
+        case 10: createConfettiEffect(); break;
+        case 11: createMouseTrailEffect(); break;
+        default: createFireEffect(); break;
+        }
+    }
+
+    void createFireEffect() {
+        auto emitter = std::make_unique<ParticleEmitter>();
+        emitter->position = { SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT - 100 };
         emitter->emissionRate = 100;
         emitter->pattern = EmissionPattern::CONE;
         emitter->patternAngle = HALF_PI / 2;
-        emitter->patternRadius = 10;
         emitter->rotation = -HALF_PI;
 
         emitter->lifetimeRange = { 0.5f, 1.5f };
@@ -673,10 +1126,10 @@ namespace ParticleSystem {
         emitter->angleRange = { -HALF_PI - 0.3f, -HALF_PI + 0.3f };
 
         emitter->colorRamp = {
-            {0.0f, Color(255, 255, 200)},
-            {0.2f, Color(255, 200, 100)},
-            {0.5f, Color(255, 100, 50)},
-            {1.0f, Color(100, 0, 0, 0)}
+            ColorRampPoint(0.0f, Color(255, 255, 200)),
+            ColorRampPoint(0.2f, Color(255, 200, 100)),
+            ColorRampPoint(0.5f, Color(255, 100, 50)),
+            ColorRampPoint(1.0f, Color(100, 0, 0, 0))
         };
 
         emitter->shape = ParticleShape::FLAME;
@@ -691,71 +1144,12 @@ namespace ParticleSystem {
 
         emitter->behaviors.push_back(ParticleBehavior::TURBULENCE);
 
-        return emitter;
+        emitters.push_back(std::move(emitter));
     }
 
-    ParticleEmitter* ParticleSystemManager::createExplosionEffect(const Vec2& pos) {
-        auto emitter = createEmitter();
-        emitter->position = pos;
-        emitter->burstMode = true;
-        emitter->burstCount = 200;
-        emitter->active = false; // Single burst
-
-        emitter->pattern = EmissionPattern::SPHERE;
-        emitter->patternRadius = 5;
-
-        emitter->lifetimeRange = { 0.5f, 1.0f };
-        emitter->sizeRange = { 5.0f, 15.0f };
-        emitter->speedRange = { 200.0f, 500.0f };
-        emitter->angleRange = { 0, TWO_PI };
-
-        emitter->colorRamp = {
-            {0.0f, Color(255, 255, 255)},
-            {0.1f, Color(255, 200, 100)},
-            {0.3f, Color(255, 100, 50)},
-            {1.0f, Color(50, 50, 50, 0)}
-        };
-
-        emitter->shape = ParticleShape::CIRCLE;
-        emitter->blendMode = BlendMode::ADD;
-        emitter->enableGlow = true;
-        emitter->glowIntensity = 2.0f;
-
-        emitter->drag = 0.95f;
-
-        // Add shockwave
-        auto shockwave = createEmitter();
-        shockwave->position = pos;
-        shockwave->burstMode = true;
-        shockwave->burstCount = 1;
-        shockwave->active = false;
-
-        shockwave->lifetimeRange = { 0.5f, 0.5f };
-        shockwave->sizeRange = { 10.0f, 10.0f };
-        shockwave->speedRange = { 0, 0 };
-
-        shockwave->colorRamp = {
-            {0.0f, Color(255, 255, 255, 128)},
-            {1.0f, Color(255, 255, 255, 0)}
-        };
-
-        shockwave->shape = ParticleShape::RING;
-        shockwave->blendMode = BlendMode::ADD;
-
-        // Custom update to expand ring
-        shockwave->onParticleUpdate = [](Particle& p) {
-            p.size = p.startSize + p.age * 500;
-            };
-
-        emitter->burst();
-        shockwave->burst();
-
-        return emitter;
-    }
-
-    ParticleEmitter* ParticleSystemManager::createMagicEffect(const Vec2& pos) {
-        auto emitter = createEmitter();
-        emitter->position = pos;
+    void createMagicEffect() {
+        auto emitter = std::make_unique<ParticleEmitter>();
+        emitter->position = { SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f };
         emitter->emissionRate = 50;
         emitter->pattern = EmissionPattern::CIRCLE;
         emitter->patternRadius = 30;
@@ -766,15 +1160,14 @@ namespace ParticleSystem {
         emitter->angleRange = { 0, TWO_PI };
 
         emitter->colorRamp = {
-            {0.0f, Color::hsv(random_float(0, 360), 1.0f, 1.0f)},
-            {0.5f, Color::hsv(random_float(0, 360), 0.8f, 0.8f)},
-            {1.0f, Color(100, 100, 255, 0)}
+            ColorRampPoint(0.0f, Color::hsv(Utils::randomFloat(0, 360), 1.0f, 1.0f)),
+            ColorRampPoint(0.5f, Color::hsv(Utils::randomFloat(0, 360), 0.8f, 0.8f)),
+            ColorRampPoint(1.0f, Color(100, 100, 255, 0))
         };
 
         emitter->shape = ParticleShape::STAR;
         emitter->blendMode = BlendMode::ADD;
         emitter->enableGlow = true;
-        emitter->glowIntensity = 1.0f;
         emitter->enablePulse = true;
         emitter->pulseRate = 2.0f;
         emitter->pulseAmount = 0.3f;
@@ -782,182 +1175,517 @@ namespace ParticleSystem {
         emitter->shimmerRate = 5.0f;
 
         emitter->behaviors.push_back(ParticleBehavior::ORBIT);
-        emitter->targetPosition = pos;
+        emitter->targetPosition = emitter->position;
 
-        // Add force field for swirling effect
         ForceField field;
-        field.position = pos;
+        field.position = emitter->position;
         field.radius = 100;
         field.strength = 50;
         field.type = ForceField::VORTEX;
-        emitter->addForceField(field);
+        emitter->forceFields.push_back(field);
 
-        return emitter;
+        emitters.push_back(std::move(emitter));
     }
 
-    ParticleEmitter* ParticleSystemManager::createElectricityEffect(const Vec2& start, const Vec2& end) {
-        auto emitter = createEmitter();
-        emitter->position = start;
+    void createExplosionEffect() {
+        auto emitter = std::make_unique<ParticleEmitter>();
+        emitter->position = { SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f };
+        emitter->burstMode = true;
+        emitter->burstCount = 200;
+        emitter->active = false;
+
+        emitter->pattern = EmissionPattern::SPHERE;
+        emitter->lifetimeRange = { 0.5f, 1.0f };
+        emitter->sizeRange = { 5.0f, 15.0f };
+        emitter->speedRange = { 200.0f, 500.0f };
+        emitter->angleRange = { 0, TWO_PI };
+
+        emitter->colorRamp = {
+            ColorRampPoint(0.0f, Color(255, 255, 255)),
+            ColorRampPoint(0.1f, Color(255, 200, 100)),
+            ColorRampPoint(0.3f, Color(255, 100, 50)),
+            ColorRampPoint(1.0f, Color(50, 50, 50, 0))
+        };
+
+        emitter->shape = ParticleShape::CIRCLE;
+        emitter->blendMode = BlendMode::ADD;
+        emitter->enableGlow = true;
+        emitter->glowIntensity = 2.0f;
+        emitter->drag = 0.95f;
+
+        emitter->burst();
+        emitters.push_back(std::move(emitter));
+    }
+
+    void createSmokeEffect() {
+        auto emitter = std::make_unique<ParticleEmitter>();
+        emitter->position = { SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT * 0.7f };
+        emitter->emissionRate = 30;
+        emitter->pattern = EmissionPattern::CONE;
+        emitter->patternAngle = HALF_PI / 3;
+        emitter->rotation = -HALF_PI;
+
+        emitter->lifetimeRange = { 2.0f, 4.0f };
+        emitter->sizeRange = { 20.0f, 40.0f };
+        emitter->speedRange = { 30.0f, 60.0f };
+        emitter->angleRange = { -HALF_PI - 0.3f, -HALF_PI + 0.3f };
+
+        emitter->colorRamp = {
+            ColorRampPoint(0.0f, Color(150, 150, 150, 200)),
+            ColorRampPoint(0.5f, Color(100, 100, 100, 150)),
+            ColorRampPoint(1.0f, Color(50, 50, 50, 0))
+        };
+
+        emitter->shape = ParticleShape::SMOKE_PUFF;
+        emitter->blendMode = BlendMode::NORMAL;
+        emitter->gravity = { 0, -20 };
+        emitter->turbulence = 30;
+        emitter->behaviors.push_back(ParticleBehavior::TURBULENCE);
+
+        emitters.push_back(std::move(emitter));
+    }
+
+    void createRainEffect() {
+        auto emitter = std::make_unique<ParticleEmitter>();
+        emitter->position = { SCREEN_WIDTH / 2.0f, -50 };
+        emitter->emissionRate = 300;
+        emitter->pattern = EmissionPattern::LINE;
+        emitter->patternRadius = SCREEN_WIDTH / 2;
+
+        emitter->lifetimeRange = { 2.0f, 3.0f };
+        emitter->sizeRange = { 1.0f, 2.0f };
+        emitter->speedRange = { 400.0f, 500.0f };
+        emitter->angleRange = { HALF_PI - 0.1f, HALF_PI + 0.1f };
+
+        emitter->colorRamp = {
+            ColorRampPoint(0.0f, Color(150, 150, 255, 100)),
+            ColorRampPoint(1.0f, Color(150, 150, 255, 50))
+        };
+
+        emitter->shape = ParticleShape::CIRCLE;
+        emitter->blendMode = BlendMode::NORMAL;
+        emitter->gravity = { 0, 200 };
+        emitter->enableTrails = true;
+        emitter->trailLength = 10;
+
+        emitters.push_back(std::move(emitter));
+    }
+
+    void createSnowEffect() {
+        auto emitter = std::make_unique<ParticleEmitter>();
+        emitter->position = { SCREEN_WIDTH / 2.0f, -50 };
+        emitter->emissionRate = 50;
+        emitter->pattern = EmissionPattern::LINE;
+        emitter->patternRadius = SCREEN_WIDTH / 2;
+
+        emitter->lifetimeRange = { 5.0f, 8.0f };
+        emitter->sizeRange = { 2.0f, 6.0f };
+        emitter->speedRange = { 30.0f, 60.0f };
+        emitter->angleRange = { HALF_PI - 0.3f, HALF_PI + 0.3f };
+
+        emitter->colorRamp = {
+            ColorRampPoint(0.0f, Color(255, 255, 255, 200)),
+            ColorRampPoint(1.0f, Color(255, 255, 255, 100))
+        };
+
+        emitter->shape = ParticleShape::CIRCLE;
+        emitter->blendMode = BlendMode::NORMAL;
+        emitter->gravity = { 0, 30 };
+        emitter->wind = { 20, 0 };
+        emitter->behaviors.push_back(ParticleBehavior::WANDER);
+
+        emitters.push_back(std::move(emitter));
+    }
+
+    void createLightningEffect() {
+        auto emitter = std::make_unique<ParticleEmitter>();
+        emitter->position = { 100, SCREEN_HEIGHT / 2.0f };
         emitter->emissionRate = 200;
         emitter->pattern = EmissionPattern::LINE;
-        emitter->patternRadius = (end - start).length();
-        emitter->rotation = std::atan2(end.y - start.y, end.x - start.x);
+        emitter->patternRadius = SCREEN_WIDTH - 200;
+        emitter->rotation = 0;
 
         emitter->lifetimeRange = { 0.1f, 0.3f };
         emitter->sizeRange = { 2.0f, 4.0f };
         emitter->speedRange = { 0, 50.0f };
 
         emitter->colorRamp = {
-            {0.0f, Color(200, 200, 255)},
-            {0.5f, Color(150, 150, 255)},
-            {1.0f, Color(100, 100, 200, 0)}
+            ColorRampPoint(0.0f, Color(200, 200, 255)),
+            ColorRampPoint(0.5f, Color(150, 150, 255)),
+            ColorRampPoint(1.0f, Color(100, 100, 200, 0))
         };
 
         emitter->shape = ParticleShape::LIGHTNING;
         emitter->blendMode = BlendMode::ADD;
         emitter->enableGlow = true;
         emitter->glowIntensity = 2.0f;
-
         emitter->turbulence = 100;
 
-        return emitter;
+        emitters.push_back(std::move(emitter));
     }
 
-    // ===== Utility Functions =====
-    namespace ParticleUtils {
+    void createPortalEffect() {
+        auto emitter = std::make_unique<ParticleEmitter>();
+        emitter->position = { SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f };
+        emitter->emissionRate = 100;
+        emitter->pattern = EmissionPattern::RING;
+        emitter->patternRadius = 100;
 
-        float perlinNoise(float x, float y) {
-            // Simple pseudo-random noise (replace with proper Perlin noise for production)
-            int n = static_cast<int>(x + y * 57);
-            n = (n << 13) ^ n;
-            float noise = (1.0f - ((n * (n * n * 15731 + 789221) + 1376312589) & 0x7fffffff) / 1073741824.0f);
-            return noise;
-        }
+        emitter->lifetimeRange = { 2.0f, 3.0f };
+        emitter->sizeRange = { 3.0f, 8.0f };
+        emitter->speedRange = { 0, 20 };
 
-        float easeInOut(float t) {
-            return t < 0.5f ? 2 * t * t : -1 + (4 - 2 * t) * t;
-        }
+        emitter->colorRamp = {
+            ColorRampPoint(0.0f, Color(100, 50, 255)),
+            ColorRampPoint(0.5f, Color(200, 100, 255)),
+            ColorRampPoint(1.0f, Color(50, 0, 150, 0))
+        };
 
-        float easeInCubic(float t) {
-            return t * t * t;
-        }
+        emitter->shape = ParticleShape::CIRCLE;
+        emitter->blendMode = BlendMode::ADD;
+        emitter->enableGlow = true;
 
-        float easeOutCubic(float t) {
-            return 1 + (--t) * t * t;
-        }
+        ForceField vortex;
+        vortex.position = emitter->position;
+        vortex.radius = 200;
+        vortex.strength = 100;
+        vortex.type = ForceField::VORTEX;
+        emitter->forceFields.push_back(vortex);
 
-        float easeInOutElastic(float t) {
-            if (t < 0.5f) {
-                return 0.5f * std::sin(13 * HALF_PI * (2 * t)) * std::pow(2, 10 * ((2 * t) - 1));
+        emitters.push_back(std::move(emitter));
+    }
+
+    void createGalaxyEffect() {
+        auto emitter = std::make_unique<ParticleEmitter>();
+        emitter->position = { SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT / 2.0f };
+        emitter->emissionRate = 100;
+        emitter->pattern = EmissionPattern::SPIRAL;
+        emitter->patternRadius = 200;
+
+        emitter->lifetimeRange = { 5.0f, 10.0f };
+        emitter->sizeRange = { 1.0f, 4.0f };
+        emitter->speedRange = { 0, 10 };
+
+        emitter->colorRamp = {
+            ColorRampPoint(0.0f, Color(255, 255, 255)),
+            ColorRampPoint(0.3f, Color(200, 200, 255)),
+            ColorRampPoint(0.6f, Color(255, 200, 200)),
+            ColorRampPoint(1.0f, Color(255, 255, 255, 0))
+        };
+
+        emitter->shape = ParticleShape::STAR;
+        emitter->blendMode = BlendMode::ADD;
+        emitter->enableGlow = true;
+        emitter->enableShimmer = true;
+
+        emitters.push_back(std::move(emitter));
+    }
+
+    void createFountainEffect() {
+        auto emitter = std::make_unique<ParticleEmitter>();
+        emitter->position = { SCREEN_WIDTH / 2.0f, SCREEN_HEIGHT - 50 };
+        emitter->emissionRate = 150;
+        emitter->pattern = EmissionPattern::CONE;
+        emitter->patternAngle = HALF_PI / 4;
+        emitter->rotation = -HALF_PI;
+
+        emitter->lifetimeRange = { 2.0f, 3.0f };
+        emitter->sizeRange = { 3.0f, 8.0f };
+        emitter->speedRange = { 200.0f, 400.0f };
+        emitter->angleRange = { -HALF_PI - 0.3f, -HALF_PI + 0.3f };
+
+        emitter->colorRamp = {
+            ColorRampPoint(0.0f, Color(100, 150, 255, 200)),
+            ColorRampPoint(0.5f, Color(150, 200, 255, 150)),
+            ColorRampPoint(1.0f, Color(200, 220, 255, 0))
+        };
+
+        emitter->shape = ParticleShape::CIRCLE;
+        emitter->blendMode = BlendMode::NORMAL;
+        emitter->gravity = { 0, 400 };
+        emitter->enableTrails = true;
+        emitter->trailLength = 8;
+        emitter->drag = 0.99f;
+
+        emitters.push_back(std::move(emitter));
+    }
+
+    void createConfettiEffect() {
+        auto emitter = std::make_unique<ParticleEmitter>();
+        emitter->position = { SCREEN_WIDTH / 2.0f, 50 };
+        emitter->emissionRate = 50;
+        emitter->pattern = EmissionPattern::CONE;
+        emitter->patternAngle = HALF_PI;
+        emitter->rotation = HALF_PI;
+
+        emitter->lifetimeRange = { 3.0f, 5.0f };
+        emitter->sizeRange = { 5.0f, 10.0f };
+        emitter->speedRange = { 100.0f, 300.0f };
+        emitter->angleRange = { HALF_PI - 0.5f, HALF_PI + 0.5f };
+        emitter->angularVelRange = { -360, 360 };
+
+        emitter->onParticleSpawn = [](Particle& p) {
+            float hue = Utils::randomFloat(0, 360);
+            p.colorRamp = {
+                ColorRampPoint(0.0f, Color::hsv(hue, 1.0f, 1.0f)),
+                ColorRampPoint(1.0f, Color::hsv(hue, 1.0f, 1.0f, 0))
+            };
+            p.shape = static_cast<ParticleShape>(Utils::randomInt(0, 5));
+            };
+
+        emitter->blendMode = BlendMode::NORMAL;
+        emitter->gravity = { 0, 200 };
+        emitter->drag = 0.98f;
+
+        emitters.push_back(std::move(emitter));
+    }
+
+    void createMouseTrailEffect() {
+        auto emitter = std::make_unique<ParticleEmitter>();
+        emitter->emissionRate = 100;
+        emitter->pattern = EmissionPattern::POINT;
+
+        emitter->lifetimeRange = { 0.5f, 1.0f };
+        emitter->sizeRange = { 5.0f, 15.0f };
+        emitter->speedRange = { 0, 20 };
+        emitter->angleRange = { 0, TWO_PI };
+
+        emitter->colorRamp = {
+            ColorRampPoint(0.0f, Utils::rainbow(0)),
+            ColorRampPoint(0.2f, Utils::rainbow(0.2f)),
+            ColorRampPoint(0.4f, Utils::rainbow(0.4f)),
+            ColorRampPoint(0.6f, Utils::rainbow(0.6f)),
+            ColorRampPoint(0.8f, Utils::rainbow(0.8f)),
+            ColorRampPoint(1.0f, Utils::rainbow(1.0f))
+        };
+
+        emitter->shape = ParticleShape::STAR;
+        emitter->blendMode = BlendMode::ADD;
+        emitter->enableGlow = true;
+        emitter->enableTrails = true;
+        emitter->trailLength = 10;
+
+        emitters.push_back(std::move(emitter));
+    }
+
+    void handleEvents() {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_EVENT_QUIT) {
+                running = false;
             }
-            else {
-                return 0.5f * (std::sin(-13 * HALF_PI * ((2 * t - 1) + 1)) * std::pow(2, -10 * (2 * t - 1)) + 2);
+            else if (event.type == SDL_EVENT_KEY_DOWN) {
+                handleKeyPress(event.key.key);
+            }
+            else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+                mousePressed = true;
+                handleMouseClick(event.button.x, event.button.y);
+            }
+            else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+                mousePressed = false;
+            }
+            else if (event.type == SDL_EVENT_MOUSE_MOTION) {
+                mouseX = event.motion.x;
+                mouseY = event.motion.y;
             }
         }
+    }
 
-        float bounce(float t) {
-            if (t < 0.363636f) {
-                return 7.5625f * t * t;
+    void handleKeyPress(SDL_Keycode key) {
+        switch (key) {
+        case SDLK_ESCAPE:
+            running = false;
+            break;
+        case SDLK_SPACE:
+            paused = !paused;
+            break;
+        case SDLK_S:
+            showStats = !showStats;
+            break;
+        case SDLK_H:
+            showHelp = !showHelp;
+            break;
+        case SDLK_R:
+            loadEffect(currentEffectIndex);
+            break;
+        case SDLK_LEFT:
+            loadEffect((currentEffectIndex - 1 + effectNames.size()) % effectNames.size());
+            break;
+        case SDLK_RIGHT:
+            loadEffect((currentEffectIndex + 1) % effectNames.size());
+            break;
+        case SDLK_C:
+            for (auto& emitter : emitters) {
+                emitter->clear();
             }
-            else if (t < 0.727272f) {
-                t -= 0.545454f;
-                return 7.5625f * t * t + 0.75f;
+            break;
+        case SDLK_1: case SDLK_2: case SDLK_3: case SDLK_4: case SDLK_5:
+        case SDLK_6: case SDLK_7: case SDLK_8: case SDLK_9:
+            loadEffect(key - SDLK_1);
+            break;
+        }
+    }
+
+    void handleMouseClick(float x, float y) {
+        // Create explosion at mouse position
+        if (currentEffectIndex == 2) {
+            emitters[0]->position = { x, y };
+            emitters[0]->burst();
+        }
+    }
+
+    void update() {
+        // Calculate delta time
+        Uint64 currentTime = SDL_GetTicks();
+        deltaTime = (currentTime - lastFrameTime) / 1000.0f;
+        lastFrameTime = currentTime;
+
+        if (paused) return;
+
+        // Update emitters
+        for (auto& emitter : emitters) {
+            // Update mouse trail position
+            if (currentEffectIndex == 11) {
+                emitter->position = { mouseX, mouseY };
             }
-            else if (t < 0.909090f) {
-                t -= 0.818181f;
-                return 7.5625f * t * t + 0.9375f;
-            }
-            else {
-                t -= 0.954545f;
-                return 7.5625f * t * t + 0.984375f;
-            }
+
+            emitter->update(deltaTime);
         }
 
-        std::vector<Vec2> generateStarPoints(int numPoints, float innerRadius, float outerRadius) {
-            std::vector<Vec2> points;
-            float angleStep = TWO_PI / (numPoints * 2);
+        // Update FPS
+        frameCount++;
+        fpsTimer += deltaTime;
+        if (fpsTimer >= 1.0f) {
+            currentFPS = frameCount / fpsTimer;
+            frameCount = 0;
+            fpsTimer = 0;
+        }
+    }
 
-            for (int i = 0; i < numPoints * 2; ++i) {
-                float radius = (i % 2 == 0) ? outerRadius : innerRadius;
-                float angle = i * angleStep;
-                points.push_back({ std::cos(angle) * radius, std::sin(angle) * radius });
-            }
-            points.push_back(points[0]); // Close the shape
-
-            return points;
+    void render() {
+        // Clear screen with gradient
+        for (int y = 0; y < SCREEN_HEIGHT; y += 2) {
+            int intensity = 20 + (y * 20 / SCREEN_HEIGHT);
+            draw.color(intensity, intensity, intensity + 10);
+            draw.fill_rect(0, y, SCREEN_WIDTH, 2);
         }
 
-        std::vector<Vec2> generateHeartPoints(float size) {
-            std::vector<Vec2> points;
-            int segments = 32;
-
-            for (int i = 0; i <= segments; ++i) {
-                float t = (i / static_cast<float>(segments)) * TWO_PI;
-                float x = 16 * std::pow(std::sin(t), 3);
-                float y = -(13 * std::cos(t) - 5 * std::cos(2 * t) - 2 * std::cos(3 * t) - std::cos(4 * t));
-                points.push_back({ x * size / 20, y * size / 20 });
-            }
-
-            return points;
+        // Draw particles
+        for (auto& emitter : emitters) {
+            emitter->draw(renderer, draw);
         }
 
-        std::vector<Vec2> generateSpiralPoints(float size, int turns) {
-            std::vector<Vec2> points;
-            int segments = 32 * turns;
+        // Draw UI
+        drawUI();
 
-            for (int i = 0; i <= segments; ++i) {
-                float t = (i / static_cast<float>(segments)) * turns * TWO_PI;
-                float radius = (i / static_cast<float>(segments)) * size;
-                points.push_back({ std::cos(t) * radius, std::sin(t) * radius });
-            }
+        draw.present();
+    }
 
-            return points;
+    void drawUI() {
+        if (showStats) {
+            drawStats();
         }
 
-        Color rainbow(float t) {
-            return Color::hsv(t * 360, 1.0f, 1.0f);
+        if (showHelp) {
+            drawHelp();
         }
 
-        Color temperatureToColor(float kelvin) {
-            // Simplified color temperature conversion
-            float temp = kelvin / 100;
-            float r, g, b;
+        // Draw effect name
+        draw.color(0, 0, 0, 180);
+        draw.fill_rect(SCREEN_WIDTH / 2 - 150, SCREEN_HEIGHT - 50, 300, 40);
+        draw.color(255, 255, 255);
+        draw.rect(SCREEN_WIDTH / 2 - 150, SCREEN_HEIGHT - 50, 300, 40);
 
-            if (temp <= 66) {
-                r = 255;
-                g = temp;
-                g = 99.4708025861f * std::log(g) - 161.1195681661f;
-                if (temp <= 19) {
-                    b = 0;
-                }
-                else {
-                    b = temp - 10;
-                    b = 138.5177312231f * std::log(b) - 305.0447927307f;
-                }
-            }
-            else {
-                r = temp - 60;
-                r = 329.698727446f * std::pow(r, -0.1332047592f);
-                g = temp - 60;
-                g = 288.1221695283f * std::pow(g, -0.0755148492f);
-                b = 255;
-            }
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+        std::string name = effectNames[currentEffectIndex];
+        SDL_RenderDebugText(renderer, SCREEN_WIDTH / 2 - name.length() * 4,
+            SCREEN_HEIGHT - 35, name.c_str());
+    }
 
-            return Color(
-                std::max(0.0f, std::min(1.0f, r / 255)),
-                std::max(0.0f, std::min(1.0f, g / 255)),
-                std::max(0.0f, std::min(1.0f, b / 255))
-            );
+    void drawStats() {
+        draw.color(0, 0, 0, 200);
+        draw.fill_rect(10, 10, 200, 100);
+        draw.color(255, 255, 255);
+        draw.rect(10, 10, 200, 100);
+
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+
+        std::stringstream ss;
+        ss << "FPS: " << static_cast<int>(currentFPS);
+        SDL_RenderDebugText(renderer, 20, 20, ss.str().c_str());
+
+        int totalParticles = 0;
+        for (const auto& emitter : emitters) {
+            totalParticles += emitter->getParticleCount();
         }
 
-        Color plasmaColor(float t) {
-            // Generate plasma-like colors
-            float r = std::sin(t * TWO_PI) * 0.5f + 0.5f;
-            float g = std::sin(t * TWO_PI + TWO_PI / 3) * 0.5f + 0.5f;
-            float b = std::sin(t * TWO_PI + 2 * TWO_PI / 3) * 0.5f + 0.5f;
-            return Color(r, g, b);
+        ss.str("");
+        ss << "Particles: " << totalParticles;
+        SDL_RenderDebugText(renderer, 20, 40, ss.str().c_str());
+
+        ss.str("");
+        ss << "Emitters: " << emitters.size();
+        SDL_RenderDebugText(renderer, 20, 60, ss.str().c_str());
+
+        if (paused) {
+            SDL_RenderDebugText(renderer, 20, 80, "PAUSED");
         }
+    }
 
-    } // namespace ParticleUtils
+    void drawHelp() {
+        draw.color(0, 0, 0, 220);
+        draw.fill_rect(SCREEN_WIDTH / 2 - 200, SCREEN_HEIGHT / 2 - 150, 400, 300);
+        draw.color(255, 255, 255);
+        draw.rect(SCREEN_WIDTH / 2 - 200, SCREEN_HEIGHT / 2 - 150, 400, 300);
 
-} // namespace ParticleSystem
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+        int y = SCREEN_HEIGHT / 2 - 130;
+
+        SDL_RenderDebugText(renderer, SCREEN_WIDTH / 2 - 40, y, "CONTROLS");
+        y += 30;
+
+        SDL_RenderDebugText(renderer, SCREEN_WIDTH / 2 - 180, y += 20,
+            "Left/Right - Switch effects");
+        SDL_RenderDebugText(renderer, SCREEN_WIDTH / 2 - 180, y += 20,
+            "1-9 - Jump to effect");
+        SDL_RenderDebugText(renderer, SCREEN_WIDTH / 2 - 180, y += 20,
+            "Space - Pause/Resume");
+        SDL_RenderDebugText(renderer, SCREEN_WIDTH / 2 - 180, y += 20,
+            "R - Restart effect");
+        SDL_RenderDebugText(renderer, SCREEN_WIDTH / 2 - 180, y += 20,
+            "C - Clear particles");
+        SDL_RenderDebugText(renderer, SCREEN_WIDTH / 2 - 180, y += 20,
+            "S - Toggle stats");
+        SDL_RenderDebugText(renderer, SCREEN_WIDTH / 2 - 180, y += 20,
+            "H - Toggle help");
+        SDL_RenderDebugText(renderer, SCREEN_WIDTH / 2 - 180, y += 20,
+            "ESC - Exit");
+    }
+
+    void run() {
+        while (running) {
+            handleEvents();
+            update();
+            render();
+
+            // Cap framerate to 60 FPS
+            SDL_Delay(16);
+        }
+    }
+};
+
+//// Main entry point
+//int main(int argc, char* argv[]) {
+//    (void)argc; (void)argv;
+//
+//    SDL_SetAppMetadata("Particle System Testbed", "1.0", "com.example.particles");
+//
+//    ParticleTestbed testbed;
+//    if (!testbed.init()) {
+//        SDL_Log("Failed to initialize testbed");
+//        return -1;
+//    }
+//
+//    testbed.run();
+//    return 0;
+//}
