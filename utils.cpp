@@ -20,6 +20,7 @@ struct Vec2 {
 
     Vec2(float x = 0, float y = 0) : x(x), y(y) {}
 
+    Vec2 operator-() const { return { -x, -y }; }
     Vec2 operator+(const Vec2& v) const { return { x + v.x, y + v.y }; }
     Vec2 operator-(const Vec2& v) const { return { x - v.x, y - v.y }; }
     Vec2 operator*(float s) const { return { x * s, y * s }; }
@@ -696,6 +697,10 @@ struct Utils {
     static inline float lerpAngle(float a, float b, float t) {
         float diff = angleDifference(a, b);
         return a + diff * t;
+    }
+
+    static inline float degToRad(float degrees) {
+        return degrees * PI / 180.0f;
     }
 
 private:
