@@ -753,9 +753,9 @@ public:
         }
 
         // Initialize abilities defaults
-        /*player_abilities["jump"] = false;
-        player_abilities["double_jump"] = false;
-        player_abilities["fireball"] = false;*/
+        // player_abilities["jump"] = false;
+        // player_abilities["double_jump"] = false;
+        // player_abilities["fireball"] = false;
 
         load_level();
     }
